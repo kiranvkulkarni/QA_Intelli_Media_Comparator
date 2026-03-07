@@ -28,6 +28,7 @@ class ComparisonReport(BaseModel):
 
     # Quality scores
     quality_metrics: QualityMetrics = Field(default_factory=QualityMetrics)
+    ref_quality_metrics: Optional[QualityMetrics] = None  # reference metrics (compare mode only)
     nr_scores: NoReferenceScores = Field(default_factory=NoReferenceScores)
     fr_scores: Optional[FullReferenceScores] = None     # only when reference provided
 
@@ -82,6 +83,12 @@ class ComparisonReport(BaseModel):
                 grade = QualityGrade.WARNING
             reasons.append(
                 f"BRISQUE score {self.nr_scores.brisque:.1f} indicates poor perceptual quality."
+            )
+
+        # Comparative quality regression (compare mode only)
+        if self.ref_quality_metrics is not None:
+            reasons.extend(
+                self.quality_metrics.comparison_failure_reasons(self.ref_quality_metrics)
             )
 
         self.overall_grade = grade

@@ -162,29 +162,52 @@ class AnnotationRenderer:
         panel = np.full((panel_h, _PANEL_WIDTH, 3), 30, dtype=np.uint8)
 
         lines: list[tuple[str, Optional[tuple[int, int, int]]]] = []
-        lines.append(("=== QUALITY METRICS ===", (200, 200, 200)))
+        ref = report.ref_quality_metrics  # None in analyze mode, populated in compare mode
+
+        # Header reflects mode
+        if ref is not None:
+            lines.append(("=== DUT vs REFERENCE ===", (200, 200, 200)))
+        else:
+            lines.append(("=== QUALITY METRICS ===", (200, 200, 200)))
         lines.append(("", None))
 
         # Standard quality metrics
         qm = report.quality_metrics
         lines.append(("-- Image Quality --", (150, 150, 150)))
-        self._add_metric_line(lines, "Sharpness (Laplacian)", qm.blur_score, ">100", "%.1f")
-        self._add_metric_line(lines, "Noise Sigma", qm.noise_sigma, "<8", "%.2f")
-        self._add_metric_line(lines, "Exposure Mean", qm.exposure_mean, None, "%.1f L*")
-        self._add_metric_line(lines, "Highlight Clip%", qm.highlight_clipping_pct, "<1%", "%.2f%%")
-        self._add_metric_line(lines, "Shadow Clip%", qm.shadow_clipping_pct, "<1%", "%.2f%%")
-        self._add_metric_line(lines, "Saturation Mean", qm.saturation_mean, None, "%.3f")
-        self._add_metric_line(lines, "Dynamic Range", qm.dynamic_range_stops, None, "%.1f EV")
-        self._add_metric_line(lines, "Color Cast R", qm.color_cast_r, None, "%+.1f")
-        self._add_metric_line(lines, "Color Cast G", qm.color_cast_g, None, "%+.1f")
-        self._add_metric_line(lines, "Color Cast B", qm.color_cast_b, None, "%+.1f")
-        self._add_metric_line(lines, "WB Deviation", qm.white_balance_deviation, None, "%.3f")
-        self._add_metric_line(lines, "Chrom. Aberration", qm.chromatic_aberration_score, "<2px", "%.2f px")
+
+        if ref is not None:
+            # Compare mode: show DUT / REF / Δ for each metric
+            self._add_compare_line(lines, "Sharpness", qm.blur_score, ref.blur_score, "%.0f", higher_better=True)
+            self._add_compare_line(lines, "Noise Sigma", qm.noise_sigma, ref.noise_sigma, "%.2f", higher_better=False)
+            self._add_compare_line(lines, "Exposure", qm.exposure_mean, ref.exposure_mean, "%.1f L*", higher_better=None)
+            self._add_compare_line(lines, "Highlight Clip%", qm.highlight_clipping_pct, ref.highlight_clipping_pct, "%.2f%%", higher_better=False)
+            self._add_compare_line(lines, "Shadow Clip%", qm.shadow_clipping_pct, ref.shadow_clipping_pct, "%.2f%%", higher_better=False)
+            self._add_compare_line(lines, "Saturation", qm.saturation_mean, ref.saturation_mean, "%.3f", higher_better=None)
+            self._add_compare_line(lines, "Dynamic Range", qm.dynamic_range_stops, ref.dynamic_range_stops, "%.1f EV", higher_better=True)
+            self._add_compare_line(lines, "Color Cast R", qm.color_cast_r, ref.color_cast_r, "%+.1f", higher_better=None)
+            self._add_compare_line(lines, "Color Cast G", qm.color_cast_g, ref.color_cast_g, "%+.1f", higher_better=None)
+            self._add_compare_line(lines, "Color Cast B", qm.color_cast_b, ref.color_cast_b, "%+.1f", higher_better=None)
+            self._add_compare_line(lines, "WB Deviation", qm.white_balance_deviation, ref.white_balance_deviation, "%.3f", higher_better=False)
+            self._add_compare_line(lines, "Chrom.Aber.", qm.chromatic_aberration_score, ref.chromatic_aberration_score, "%.2f px", higher_better=False)
+        else:
+            # Analyze mode: show absolute values with threshold hints
+            self._add_metric_line(lines, "Sharpness (Laplacian)", qm.blur_score, ">100", "%.1f")
+            self._add_metric_line(lines, "Noise Sigma", qm.noise_sigma, "<8", "%.2f")
+            self._add_metric_line(lines, "Exposure Mean", qm.exposure_mean, None, "%.1f L*")
+            self._add_metric_line(lines, "Highlight Clip%", qm.highlight_clipping_pct, "<1%", "%.2f%%")
+            self._add_metric_line(lines, "Shadow Clip%", qm.shadow_clipping_pct, "<1%", "%.2f%%")
+            self._add_metric_line(lines, "Saturation Mean", qm.saturation_mean, None, "%.3f")
+            self._add_metric_line(lines, "Dynamic Range", qm.dynamic_range_stops, None, "%.1f EV")
+            self._add_metric_line(lines, "Color Cast R", qm.color_cast_r, None, "%+.1f")
+            self._add_metric_line(lines, "Color Cast G", qm.color_cast_g, None, "%+.1f")
+            self._add_metric_line(lines, "Color Cast B", qm.color_cast_b, None, "%+.1f")
+            self._add_metric_line(lines, "WB Deviation", qm.white_balance_deviation, None, "%.3f")
+            self._add_metric_line(lines, "Chrom. Aberration", qm.chromatic_aberration_score, "<2px", "%.2f px")
         lines.append(("", None))
 
         # NR scores
         nr = report.nr_scores
-        lines.append(("-- NR-IQA Scores --", (150, 150, 150)))
+        lines.append(("-- NR-IQA Scores (DUT) --", (150, 150, 150)))
         self._add_metric_line(lines, "BRISQUE", nr.brisque, "<50", "%.1f")
         self._add_metric_line(lines, "NIQE", nr.niqe, "<6", "%.2f")
         self._add_metric_line(lines, "MUSIQ", nr.musiq, ">50", "%.1f")
@@ -194,7 +217,7 @@ class AnnotationRenderer:
         # FR scores (if available)
         if report.fr_scores:
             fr = report.fr_scores
-            lines.append(("-- Full-Reference --", (150, 150, 150)))
+            lines.append(("-- Full-Reference IQA --", (150, 150, 150)))
             self._add_fr_line(lines, "PSNR", fr.psnr, "dB")
             self._add_fr_line(lines, "SSIM", fr.ssim, "")
             self._add_fr_line(lines, "MS-SSIM", fr.ms_ssim, "")
@@ -237,6 +260,45 @@ class AnnotationRenderer:
         return panel
 
     # ── Helper methods ─────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _add_compare_line(
+        lines: list,
+        label: str,
+        dut_val: Optional[float],
+        ref_val: Optional[float],
+        fmt: str,
+        higher_better: Optional[bool],
+    ) -> None:
+        """Add two-line DUT vs REF comparison entry with delta and color coding.
+
+        higher_better=True  → positive delta is good (green), negative is bad (red)
+        higher_better=False → negative delta is good (green), positive is bad (red)
+        higher_better=None  → neutral; delta shown in white (no direction judgment)
+        """
+        # Line 1: label
+        lines.append((f"  {label}:", (170, 170, 170)))
+        if dut_val is None and ref_val is None:
+            lines.append(("    DUT:N/A  REF:N/A", (100, 100, 100)))
+            return
+
+        dut_str = (fmt % dut_val) if dut_val is not None else "N/A"
+        ref_str = (fmt % ref_val) if ref_val is not None else "N/A"
+
+        # Compute delta and pick color
+        delta_str = ""
+        color: tuple[int, int, int] = (200, 200, 200)
+        if dut_val is not None and ref_val is not None and ref_val != 0:
+            delta = dut_val - ref_val
+            pct = (delta / abs(ref_val)) * 100
+            delta_str = f" Δ{delta:+.0f}({pct:+.0f}%)"
+            if higher_better is True:
+                color = (100, 220, 100) if delta >= 0 else (80, 80, 220)
+            elif higher_better is False:
+                color = (100, 220, 100) if delta <= 0 else (80, 80, 220)
+            # higher_better=None → keep neutral color (200,200,200)
+
+        lines.append((f"    DUT:{dut_str}  REF:{ref_str}{delta_str}", color))
 
     @staticmethod
     def _add_metric_line(

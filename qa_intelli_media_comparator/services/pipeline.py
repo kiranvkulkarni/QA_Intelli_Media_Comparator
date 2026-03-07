@@ -109,6 +109,7 @@ class ComparisonPipeline:
 
         # ── 4a. Image analysis ─────────────────────────────────────────────────
         quality_metrics = None
+        ref_quality_metrics = None
         nr_scores = None
         fr_scores: Optional[FullReferenceScores] = None
         artifacts = None
@@ -121,6 +122,8 @@ class ComparisonPipeline:
             artifacts = self._artifact_detector.detect(dut_img)
 
             if ref_img is not None:
+                # Extract quality metrics from reference for side-by-side comparison
+                ref_quality_metrics = self._qm_extractor.extract(ref_img)
                 fr_scores, diff_heatmap = self._fr_comparator.compare(ref_img, dut_img)
 
         # ── 4b. Video analysis ─────────────────────────────────────────────────
@@ -163,6 +166,7 @@ class ComparisonPipeline:
             crop_result=crop_result,
             crop_result_ref=crop_result_ref,
             quality_metrics=quality_metrics or quality_metrics.__class__(),
+            ref_quality_metrics=ref_quality_metrics,
             nr_scores=nr_scores or NoReferenceScores(),
             fr_scores=fr_scores,
             artifacts=artifacts or ArtifactReport(),

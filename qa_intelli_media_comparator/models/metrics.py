@@ -135,3 +135,83 @@ class QualityMetrics(BaseModel):
                 "Increase exposure or check HDR tone mapping."
             )
         return reasons
+
+    def comparison_failure_reasons(self, ref: QualityMetrics) -> list[str]:
+        """Return failure reasons when DUT regresses significantly vs reference.
+
+        Thresholds:
+          - Sharpness: DUT < REF * 0.70  → regression (30% sharper reference)
+          - Noise:     DUT > REF * 1.50  → regression (50% more noise than reference)
+          - Exposure:  |DUT − REF| > 15 L* → significant exposure shift
+          - Highlight clip: DUT > REF + 2%  → more blown highlights than reference
+          - Shadow clip:    DUT > REF + 2%  → more crushed blacks than reference
+          - WB deviation:   DUT > REF + 0.08 → noticeably worse white balance
+          - CA score:       DUT > REF + 1.5 px → more chromatic aberration
+        """
+        reasons: list[str] = []
+
+        if self.blur_score is not None and ref.blur_score and ref.blur_score > 0:
+            ratio = self.blur_score / ref.blur_score
+            if ratio < 0.70:
+                reasons.append(
+                    f"[vs REF] Sharpness regression: DUT {self.blur_score:.1f} vs REF "
+                    f"{ref.blur_score:.1f} ({ratio*100:.0f}% of reference). "
+                    "Check focus, OIS, or motion blur."
+                )
+
+        if self.noise_sigma is not None and ref.noise_sigma is not None:
+            if self.noise_sigma > ref.noise_sigma * 1.50:
+                reasons.append(
+                    f"[vs REF] Noise regression: DUT σ={self.noise_sigma:.2f} vs REF "
+                    f"σ={ref.noise_sigma:.2f} ({self.noise_sigma/ref.noise_sigma:.1f}× noisier). "
+                    "Check ISO cap or NR aggressiveness."
+                )
+
+        if self.exposure_mean is not None and ref.exposure_mean is not None:
+            delta = self.exposure_mean - ref.exposure_mean
+            if abs(delta) > 15:
+                direction = "brighter" if delta > 0 else "darker"
+                reasons.append(
+                    f"[vs REF] Exposure shift: DUT {self.exposure_mean:.1f} L* vs REF "
+                    f"{ref.exposure_mean:.1f} L* ({delta:+.1f}, {direction}). "
+                    "Check AE metering or EV compensation."
+                )
+
+        if self.highlight_clipping_pct is not None and ref.highlight_clipping_pct is not None:
+            delta = self.highlight_clipping_pct - ref.highlight_clipping_pct
+            if delta > 2.0:
+                reasons.append(
+                    f"[vs REF] More highlight clipping: DUT {self.highlight_clipping_pct:.2f}% "
+                    f"vs REF {ref.highlight_clipping_pct:.2f}% (+{delta:.2f}%). "
+                    "Reduce EV or enable highlight recovery."
+                )
+
+        if self.shadow_clipping_pct is not None and ref.shadow_clipping_pct is not None:
+            delta = self.shadow_clipping_pct - ref.shadow_clipping_pct
+            if delta > 2.0:
+                reasons.append(
+                    f"[vs REF] More shadow clipping: DUT {self.shadow_clipping_pct:.2f}% "
+                    f"vs REF {ref.shadow_clipping_pct:.2f}% (+{delta:.2f}%). "
+                    "Increase EV or check shadow lift."
+                )
+
+        if self.white_balance_deviation is not None and ref.white_balance_deviation is not None:
+            delta = self.white_balance_deviation - ref.white_balance_deviation
+            if delta > 0.08:
+                reasons.append(
+                    f"[vs REF] White balance regression: DUT deviation={self.white_balance_deviation:.3f} "
+                    f"vs REF {ref.white_balance_deviation:.3f} (+{delta:.3f}). "
+                    "Check AWB or apply manual WB preset."
+                )
+
+        if (self.chromatic_aberration_score is not None
+                and ref.chromatic_aberration_score is not None):
+            delta = self.chromatic_aberration_score - ref.chromatic_aberration_score
+            if delta > 1.5:
+                reasons.append(
+                    f"[vs REF] Chromatic aberration increase: DUT {self.chromatic_aberration_score:.2f} px "
+                    f"vs REF {ref.chromatic_aberration_score:.2f} px (+{delta:.2f} px). "
+                    "Check lens correction profile or zoom alignment."
+                )
+
+        return reasons

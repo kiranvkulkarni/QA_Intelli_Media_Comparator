@@ -1159,13 +1159,15 @@ PreviewCropper.crop_image(dut_img)  ──────────────�
 PreviewCropper.crop_image(ref_img)  ────────────────── CropResult
     │
     ▼
-QualityMetricsExtractor.extract(dut_img)  ───────────── QualityMetrics
+QualityMetricsExtractor.extract(dut_img)  ───────────── QualityMetrics (DUT)
     │
 NoReferenceAnalyzer.analyze(dut_img)  ──────────────── NoReferenceScores
     │
 ArtifactDetector.detect(dut_img)  ──────────────────── ArtifactReport
     │
 [if reference provided]
+QualityMetricsExtractor.extract(ref_img)  ───────────── QualityMetrics (REF)
+    │                                                    (stored as ref_quality_metrics)
 ReferenceComparator.compare(ref_img, dut_img)
     ├── align (SIFT + homography)
     ├── PSNR, SSIM, MS-SSIM, LPIPS, DISTS  ─────────── FullReferenceScores
@@ -1173,7 +1175,9 @@ ReferenceComparator.compare(ref_img, dut_img)
     │
     ▼
 ComparisonReport.compute_overall_grade()
-    │ Aggregates all failures → overall_grade + failure_reasons
+    │ Aggregates FR failures + QM absolute failures + artifact failures
+    │ + comparative regressions (DUT vs REF quality metrics)
+    │ → overall_grade + failure_reasons
     ▼
 AnnotationRenderer.render(report, dut_img, diff_heatmap)
     │ Heatmap overlay + artifact boxes + grade banner + metrics panel
