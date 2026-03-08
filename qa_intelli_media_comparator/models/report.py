@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field
 
 from .enums import MediaType, QualityGrade, SyncMode
 from .media import CropResult
-from .metrics import FullReferenceScores, NoReferenceScores, QualityMetrics
+from .metadata import MediaMetadata, MetadataComparison
+from .metrics import FullReferenceScores, NoReferenceScores, QualityMetrics, QualityComparison
 from .artifacts import ArtifactReport
 from .video import VideoTemporalMetrics
 
@@ -26,9 +27,15 @@ class ComparisonReport(BaseModel):
     crop_result: Optional[CropResult] = None
     crop_result_ref: Optional[CropResult] = None
 
+    # EXIF metadata + camera mode
+    dut_metadata: Optional[MediaMetadata] = None       # EXIF from DUT
+    ref_metadata: Optional[MediaMetadata] = None       # EXIF from reference (compare mode)
+    metadata_comparison: Optional[MetadataComparison] = None  # side-by-side EXIF diff
+
     # Quality scores
     quality_metrics: QualityMetrics = Field(default_factory=QualityMetrics)
     ref_quality_metrics: Optional[QualityMetrics] = None  # reference metrics (compare mode only)
+    quality_comparison: Optional[QualityComparison] = None  # structured DUT vs REF (compare mode only)
     nr_scores: NoReferenceScores = Field(default_factory=NoReferenceScores)
     fr_scores: Optional[FullReferenceScores] = None     # only when reference provided
 
@@ -90,6 +97,15 @@ class ComparisonReport(BaseModel):
             reasons.extend(
                 self.quality_metrics.comparison_failure_reasons(self.ref_quality_metrics)
             )
+
+        # Camera mode notes — advisory only (never cause FAIL on their own)
+        if self.dut_metadata and self.dut_metadata.mode_notes:
+            for note in self.dut_metadata.mode_notes:
+                reasons.append(f"[Mode] {note}")
+
+        if self.metadata_comparison and self.metadata_comparison.notes:
+            for note in self.metadata_comparison.notes:
+                reasons.append(f"[Metadata] {note}")
 
         self.overall_grade = grade
         self.failure_reasons = reasons

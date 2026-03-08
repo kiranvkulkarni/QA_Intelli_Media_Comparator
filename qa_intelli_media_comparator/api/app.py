@@ -2,14 +2,19 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from .middleware import RequestContextMiddleware
 from .routes import compare_router, analyze_router, health_router, reports_router
 from .dependencies import get_pipeline
 from ..config import get_settings
+
+_FRONTEND_DIR = Path(__file__).parent.parent.parent / "frontend"
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +62,14 @@ def create_app() -> FastAPI:
     app.include_router(compare_router)
     app.include_router(analyze_router)
     app.include_router(reports_router)
+
+    # Serve the browser UI from /ui (index.html = default)
+    if _FRONTEND_DIR.exists():
+        app.mount("/ui", StaticFiles(directory=str(_FRONTEND_DIR), html=True), name="frontend")
+
+        @app.get("/", include_in_schema=False)
+        async def _root():
+            return RedirectResponse(url="/ui")
 
     return app
 

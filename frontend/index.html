@@ -1,0 +1,1616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QIMC — QA Intelli Media Comparator</title>
+<style>
+/* ─── Reset & Variables ─────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:       #0d1117;
+  --surface:  #161b27;
+  --card:     #1c2236;
+  --border:   #2a3045;
+  --accent:   #5b8af0;
+  --accent2:  #7c3aed;
+  --pass:     #10b981;
+  --warn:     #f59e0b;
+  --fail:     #ef4444;
+  --text:     #e2e8f0;
+  --muted:    #64748b;
+  --radius:   10px;
+}
+body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; min-height: 100vh; overflow-x: hidden; }
+
+/* ─── Header ────────────────────────────────────────────────────────────── */
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 20px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+}
+.logo {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  white-space: nowrap;
+}
+.logo-sub { -webkit-text-fill-color: var(--muted); font-size: 11px; font-weight: 400; letter-spacing: 0; }
+.spacer { flex: 1; }
+.api-row { display: flex; align-items: center; gap: 6px; }
+.api-row label { font-size: 11px; color: var(--muted); }
+#apiBase {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-size: 12px;
+  width: 200px;
+}
+.btn-sm {
+  padding: 4px 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  transition: all 0.2s;
+}
+.btn-sm:hover { border-color: var(--accent); color: var(--accent); }
+.health-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.health-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); transition: background 0.3s; }
+.health-dot.online { background: var(--pass); box-shadow: 0 0 6px var(--pass); }
+.health-dot.offline { background: var(--fail); }
+
+/* ─── Mode Tabs ─────────────────────────────────────────────────────────── */
+.mode-tabs {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 20px;
+  display: flex;
+  gap: 2px;
+}
+.tab-btn {
+  padding: 9px 18px;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s;
+  margin-bottom: -1px;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ─── Main Layout ───────────────────────────────────────────────────────── */
+.main-layout {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  height: calc(100vh - 93px);
+}
+.panel-left {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.panel-right { overflow-y: auto; padding: 20px; }
+
+/* ─── Cards ─────────────────────────────────────────────────────────────── */
+.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+.card-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); margin-bottom: 10px; }
+
+/* ─── Drop Zones ────────────────────────────────────────────────────────── */
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 16px 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  min-height: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: rgba(91,138,240,0.05); }
+.drop-zone.has-file { border-color: var(--pass); border-style: solid; background: rgba(16,185,129,0.05); }
+.dz-icon { font-size: 20px; }
+.dz-label { color: var(--muted); font-size: 11px; }
+.dz-filename { font-size: 11px; color: var(--pass); font-weight: 600; word-break: break-all; }
+.drop-zone input[type=file] { display: none; }
+.dz-preview { width: 100%; max-height: 100px; object-fit: contain; border-radius: 6px; margin-top: 6px; }
+.dz-clear {
+  position: absolute; top: 5px; right: 5px;
+  background: rgba(0,0,0,0.5); border: none; border-radius: 50%;
+  color: var(--text); width: 18px; height: 18px; cursor: pointer;
+  font-size: 10px; display: none; align-items: center; justify-content: center;
+}
+.drop-zone.has-file .dz-clear { display: flex; }
+
+/* ─── Profile Buttons ───────────────────────────────────────────────────── */
+.profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.profile-btn {
+  padding: 8px 6px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  transition: all 0.2s;
+  text-align: center;
+}
+.profile-btn:hover { border-color: var(--accent); color: var(--text); }
+.profile-btn.active.p-low      { border-color: var(--pass);  color: var(--pass);  background: rgba(16,185,129,0.1); }
+.profile-btn.active.p-medium   { border-color: var(--warn);  color: var(--warn);  background: rgba(245,158,11,0.1); }
+.profile-btn.active.p-high     { border-color: var(--accent);color: var(--accent);background: rgba(91,138,240,0.1); }
+.profile-btn.active.p-critical { border-color: #a855f7;      color: #a855f7;      background: rgba(168,85,247,0.1); }
+#profileDesc { font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: 8px; }
+
+/* ─── Threshold Sliders ─────────────────────────────────────────────────── */
+details.thresh-panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); }
+details.thresh-panel summary {
+  padding: 11px 14px;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--muted);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+details.thresh-panel summary::before { content: '▶'; font-size: 9px; transition: transform 0.2s; }
+details[open].thresh-panel summary::before { transform: rotate(90deg); }
+.thresh-body { padding: 0 14px 14px; }
+.thresh-group { margin-bottom: 14px; }
+.thresh-group h4 {
+  font-size: 9px; text-transform: uppercase; letter-spacing: 1.5px;
+  color: var(--accent); margin-bottom: 8px; padding-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+}
+.slider-row { margin-bottom: 8px; }
+.slider-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
+.slider-label { font-size: 11px; color: var(--text); }
+.slider-hint { font-size: 10px; color: var(--muted); margin-left: 4px; }
+.slider-val { font-size: 11px; font-weight: 700; font-family: monospace; color: var(--accent); min-width: 46px; text-align: right; }
+input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer; height: 3px; }
+
+/* ─── Options ───────────────────────────────────────────────────────────── */
+.opt-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.opt-row input[type=checkbox] { accent-color: var(--accent); }
+.opt-select { background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 5px; padding: 3px 7px; font-size: 11px; }
+
+/* ─── Run Button ────────────────────────────────────────────────────────── */
+.run-btn {
+  width: 100%; padding: 11px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border: none; border-radius: var(--radius);
+  color: white; font-size: 14px; font-weight: 700;
+  cursor: pointer; transition: opacity 0.2s, transform 0.1s;
+  position: relative;
+}
+.run-btn:hover { opacity: 0.9; }
+.run-btn:active { transform: scale(0.98); }
+.run-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.run-btn.loading::after {
+  content: '';
+  position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+  width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* ─── Results ───────────────────────────────────────────────────────────── */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%; gap: 12px; color: var(--muted);
+}
+.empty-state .icon { font-size: 48px; opacity: 0.25; }
+
+/* Grade Banner */
+.grade-banner {
+  border-radius: var(--radius); padding: 18px 22px;
+  margin-bottom: 16px; display: flex; align-items: center; gap: 16px;
+  animation: slideIn 0.35s ease;
+}
+.grade-banner.pass    { background: linear-gradient(135deg,rgba(16,185,129,.14),rgba(16,185,129,.04)); border: 1px solid rgba(16,185,129,.3); }
+.grade-banner.warning { background: linear-gradient(135deg,rgba(245,158,11,.14),rgba(245,158,11,.04)); border: 1px solid rgba(245,158,11,.3); }
+.grade-banner.fail    { background: linear-gradient(135deg,rgba(239,68,68,.14),rgba(239,68,68,.04));   border: 1px solid rgba(239,68,68,.3); }
+.grade-badge { font-size: 26px; font-weight: 800; letter-spacing: 2px; }
+.grade-banner.pass    .grade-badge { color: var(--pass); }
+.grade-banner.warning .grade-badge { color: var(--warn); }
+.grade-banner.fail    .grade-badge { color: var(--fail); }
+.grade-sub  { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.grade-time { color: var(--muted); font-size: 11px; font-family: monospace; }
+
+/* Failures */
+.failure-item {
+  padding: 7px 11px; border-radius: 5px;
+  background: rgba(239,68,68,.07); border-left: 3px solid var(--fail);
+  font-size: 12px; color: var(--text); margin-bottom: 5px; line-height: 1.5;
+}
+.failure-item.vs-ref { border-left-color: var(--warn); background: rgba(245,158,11,.07); }
+
+/* Metric Tabs */
+.metric-tabs {
+  display: flex; gap: 2px; margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.mtab {
+  padding: 7px 14px; background: transparent; border: none;
+  border-bottom: 2px solid transparent; color: var(--muted);
+  cursor: pointer; font-size: 12px; font-weight: 500; transition: all 0.2s;
+  margin-bottom: -1px;
+}
+.mtab:hover { color: var(--text); }
+.mtab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Metric Cards */
+.metrics-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(148px,1fr)); gap: 8px; margin-bottom: 14px; }
+.metric-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px; transition: border-color 0.2s;
+}
+.metric-card.pass { border-color: rgba(16,185,129,.35); }
+.metric-card.fail { border-color: rgba(239,68,68,.35); }
+.metric-card.warn { border-color: rgba(245,158,11,.35); }
+.m-name  { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.9px; margin-bottom: 5px; }
+.m-value { font-size: 20px; font-weight: 700; font-family: monospace; }
+.metric-card.pass .m-value { color: var(--pass); }
+.metric-card.fail .m-value { color: var(--fail); }
+.metric-card.warn .m-value { color: var(--warn); }
+.m-unit  { font-size: 10px; color: var(--muted); }
+.m-bar-wrap { height: 3px; background: var(--border); border-radius: 2px; margin-top: 7px; }
+.m-bar { height: 100%; border-radius: 2px; background: var(--muted); transition: width 0.5s ease; }
+.metric-card.pass .m-bar { background: var(--pass); }
+.metric-card.fail .m-bar { background: var(--fail); }
+.metric-card.warn .m-bar { background: var(--warn); }
+.m-thresh { font-size: 10px; color: var(--muted); margin-top: 4px; }
+
+/* Comparison Table */
+.cmp-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 14px; }
+.cmp-table th {
+  text-align: left; padding: 8px 10px;
+  background: var(--bg); color: var(--muted); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border);
+}
+.cmp-table td { padding: 9px 10px; border-bottom: 1px solid rgba(42,48,69,.5); }
+.cmp-table tr:hover td { background: rgba(255,255,255,.02); }
+.cmp-table .dut-val { color: var(--accent); font-family: monospace; font-weight: 600; }
+.cmp-table .ref-val { color: var(--muted); font-family: monospace; }
+.cmp-table .delta-good { color: var(--pass); font-family: monospace; font-weight: 600; }
+.cmp-table .delta-bad  { color: var(--fail); font-family: monospace; font-weight: 600; }
+.cmp-table .delta-neu  { color: var(--muted); font-family: monospace; }
+.reg-badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 700; }
+.reg-ok   { background: rgba(16,185,129,.15); color: var(--pass); }
+.reg-warn { background: rgba(245,158,11,.15);  color: var(--warn); }
+.reg-fail { background: rgba(239,68,68,.15);   color: var(--fail); }
+.reg-neu  { background: rgba(100,116,139,.15); color: var(--muted); }
+
+/* Artifact Table */
+.art-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.art-table th { text-align: left; padding: 8px 10px; background: var(--bg); color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border); }
+.art-table td { padding: 9px 10px; border-bottom: 1px solid rgba(42,48,69,.5); line-height: 1.4; }
+.art-table tr:hover td { background: rgba(255,255,255,.02); }
+.sev-badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 700; letter-spacing: .3px; }
+.sev-none     { background: rgba(100,116,139,.2); color: var(--muted); }
+.sev-low      { background: rgba(16,185,129,.15); color: var(--pass); }
+.sev-medium   { background: rgba(245,158,11,.15); color: var(--warn); }
+.sev-high     { background: rgba(239,68,68,.15);  color: var(--fail); }
+.sev-critical { background: rgba(239,68,68,.25);  color: var(--fail); }
+
+/* Image Viewer */
+.img-viewer { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-top: 16px; }
+.img-vtabs { display: flex; border-bottom: 1px solid var(--border); padding: 0 10px; }
+.itab {
+  padding: 7px 14px; background: transparent; border: none;
+  border-bottom: 2px solid transparent; color: var(--muted);
+  cursor: pointer; font-size: 12px; transition: all 0.2s; margin-bottom: -1px;
+}
+.itab:hover { color: var(--text); }
+.itab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.img-container {
+  position: relative; min-height: 180px;
+  display: flex; align-items: center; justify-content: center;
+  background: #090b12; padding: 14px;
+}
+#mainImage { max-width: 100%; max-height: 58vh; object-fit: contain; border-radius: 4px; }
+.img-placeholder { color: var(--muted); font-size: 12px; }
+.img-actions { padding: 7px 10px; display: flex; gap: 8px; justify-content: flex-end; }
+
+/* cURL Panel */
+.curl-wrap { position: relative; }
+.curl-panel {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 40px 12px 12px; font-family: monospace; font-size: 11px;
+  color: #9ca3af; white-space: pre-wrap; word-break: break-all; line-height: 1.6;
+  max-height: 140px; overflow-y: auto;
+}
+.json-panel {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 40px 12px 12px; font-family: monospace; font-size: 11px;
+  color: #9ca3af; white-space: pre; overflow: auto; line-height: 1.5;
+  max-height: 420px;
+}
+.copy-btn {
+  position: absolute; top: 8px; right: 8px;
+  padding: 3px 8px; background: var(--card); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--muted); cursor: pointer; font-size: 10px;
+}
+.copy-btn:hover { color: var(--accent); }
+
+/* Reports */
+.reports-panel { padding: 20px; min-height: calc(100vh - 93px); }
+.rep-filters { display: flex; gap: 10px; margin-bottom: 14px; align-items: center; flex-wrap: wrap; }
+.rep-table { width: 100%; border-collapse: collapse; }
+.rep-table th { text-align: left; padding: 9px 12px; background: var(--card); color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border); }
+.rep-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.rep-table tr { cursor: pointer; transition: background 0.15s; }
+.rep-table tr:hover td { background: var(--card); }
+.pg-bar { display: flex; gap: 8px; margin-top: 12px; justify-content: center; align-items: center; }
+.pg-btn { padding: 5px 12px; background: var(--card); border: 1px solid var(--border); border-radius: 6px; color: var(--text); cursor: pointer; font-size: 12px; }
+.pg-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.pg-info { color: var(--muted); font-size: 12px; }
+
+/* ─── Side-by-Side Viewer ───────────────────────────────────────────────── */
+.sbs-outer { display:none; flex-direction:column; background:#090b12; }
+.sbs-outer.active { display:flex; }
+.sbs-controls {
+  display:flex; align-items:center; gap:10px; padding:8px 12px;
+  background:var(--card); border-bottom:1px solid var(--border); flex-wrap:wrap;
+}
+.sbs-controls label { font-size:11px; color:var(--muted); }
+.sbs-ctrl-sel {
+  background:var(--bg); border:1px solid var(--border); color:var(--text);
+  border-radius:5px; padding:3px 8px; font-size:11px; cursor:pointer;
+}
+.sbs-zoom-info {
+  margin-left:auto; font-size:11px; font-family:monospace;
+  color:var(--accent); font-weight:700;
+}
+.sbs-layout {
+  display:grid; grid-template-columns:1fr 4px 1fr;
+  height:66vh; overflow:hidden;
+}
+.sbs-panel {
+  position:relative; overflow:hidden;
+  cursor:grab; background:#090b12; user-select:none;
+}
+.sbs-panel:active { cursor:grabbing; }
+.sbs-panel-label {
+  position:absolute; top:8px; left:8px; z-index:10;
+  background:rgba(0,0,0,.6); color:var(--text);
+  font-size:11px; font-weight:700; padding:3px 9px; border-radius:4px;
+  letter-spacing:.5px; pointer-events:none;
+}
+.sbs-panel-fail-badge {
+  position:absolute; top:8px; right:8px; z-index:10;
+  background:rgba(239,68,68,.25); color:var(--fail);
+  font-size:10px; font-weight:700; padding:2px 7px; border-radius:4px;
+  letter-spacing:.5px; pointer-events:none; display:none;
+}
+.sbs-img {
+  position:absolute; top:0; left:0;
+  transform-origin:0 0;
+  max-width:none; max-height:none;
+  pointer-events:none; display:block;
+}
+.sbs-divider { background:var(--border); cursor:col-resize; }
+.sbs-empty {
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  color:var(--muted); font-size:12px; pointer-events:none;
+}
+
+/* Toast */
+.toast-wrap { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 200; }
+.toast {
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 16px; font-size: 12px; max-width: 320px;
+  animation: slideIn 0.3s ease;
+}
+.toast.error { border-color: rgba(239,68,68,.4); color: var(--fail); }
+.toast.success { border-color: rgba(16,185,129,.4); color: var(--pass); }
+
+/* Animations */
+@keyframes spin { to { transform: translateY(-50%) rotate(360deg); } }
+@keyframes slideIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.loading-pulse { animation: pulse 1.4s ease infinite; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* Responsive */
+@media (max-width: 860px) {
+  .main-layout { grid-template-columns: 1fr; height: auto; }
+  .panel-left { border-right: none; border-bottom: 1px solid var(--border); max-height: none; }
+}
+code { background: var(--bg); padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<!-- ─── Header ─────────────────────────────────────────────────────────────── -->
+<header>
+  <div class="logo">QIMC <span class="logo-sub">Intelli Media Comparator</span></div>
+  <div class="spacer"></div>
+  <div class="api-row">
+    <label>API Base</label>
+    <input type="text" id="apiBase" value="http://localhost:8080" spellcheck="false">
+    <button class="btn-sm" onclick="checkHealth()">Ping</button>
+  </div>
+  <div class="health-pill">
+    <div class="health-dot" id="healthDot"></div>
+    <span id="healthText">Checking…</span>
+  </div>
+</header>
+
+<!-- ─── Mode Tabs ───────────────────────────────────────────────────────────── -->
+<nav class="mode-tabs">
+  <button class="tab-btn active" data-mode="analyze" onclick="switchMode('analyze',this)">🔬 Analyze</button>
+  <button class="tab-btn" data-mode="compare" onclick="switchMode('compare',this)">⚖ Compare</button>
+  <button class="tab-btn" data-mode="reports" onclick="switchMode('reports',this)">📋 Reports</button>
+</nav>
+
+<!-- ─── Main Workspace (Analyze / Compare) ──────────────────────────────────── -->
+<div class="main-layout" id="mainLayout">
+
+  <!-- LEFT PANEL -->
+  <div class="panel-left">
+
+    <!-- DUT Upload -->
+    <div class="card">
+      <div class="card-title">📷 DUT — Device Under Test</div>
+      <div class="drop-zone" id="dutZone" onclick="document.getElementById('dutInput').click()">
+        <button class="dz-clear" onclick="clearFile(event,'dut')">✕</button>
+        <div class="dz-icon">📁</div>
+        <div class="dz-label">Drop image/video or <u>click to browse</u></div>
+        <div class="dz-filename" id="dutName" style="display:none"></div>
+        <img class="dz-preview" id="dutPreview" style="display:none" alt="">
+      </div>
+      <input type="file" id="dutInput" accept="image/*,video/*" onchange="handleFile(event,'dut')">
+    </div>
+
+    <!-- Reference Upload (compare mode) -->
+    <div class="card" id="refCard" style="display:none">
+      <div class="card-title">⭐ Reference — Golden Sample</div>
+      <div class="drop-zone" id="refZone" onclick="document.getElementById('refInput').click()">
+        <button class="dz-clear" onclick="clearFile(event,'ref')">✕</button>
+        <div class="dz-icon">📁</div>
+        <div class="dz-label">Drop golden reference or <u>click to browse</u></div>
+        <div class="dz-filename" id="refName" style="display:none"></div>
+        <img class="dz-preview" id="refPreview" style="display:none" alt="">
+      </div>
+      <input type="file" id="refInput" accept="image/*,video/*" onchange="handleFile(event,'ref')">
+    </div>
+
+    <!-- Quality Profile -->
+    <div class="card">
+      <div class="card-title">🎯 Quality Profile</div>
+      <div class="profile-grid">
+        <button class="profile-btn p-low"      onclick="applyProfile('low')">LOW</button>
+        <button class="profile-btn p-medium"   onclick="applyProfile('medium')">MEDIUM</button>
+        <button class="profile-btn p-high"     onclick="applyProfile('high')">HIGH</button>
+        <button class="profile-btn p-critical" onclick="applyProfile('critical')">CRITICAL</button>
+      </div>
+      <div id="profileDesc"></div>
+    </div>
+
+    <!-- Threshold Playground -->
+    <details class="thresh-panel">
+      <summary>⚙ Threshold Playground</summary>
+      <div class="thresh-body">
+        <p style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5;">
+          Adjust sliders to re-evaluate pass/fail instantly on your last result — no re-upload needed.
+        </p>
+
+        <div class="thresh-group">
+          <h4>Full-Reference IQA</h4>
+          <div class="slider-row">
+            <div class="slider-header">
+              <span class="slider-label">PSNR min (dB) <span class="slider-hint">↑ better</span></span>
+              <span class="slider-val" id="v_psnr">28.0</span>
+            </div>
+            <input type="range" id="s_psnr" min="0" max="50" step="0.5" value="28" oninput="onSlider('psnr',this.value)">
+          </div>
+          <div class="slider-row">
+            <div class="slider-header">
+              <span class="slider-label">SSIM min <span class="slider-hint">0–1, ↑ better</span></span>
+              <span class="slider-val" id="v_ssim">0.80</span>
+            </div>
+            <input type="range" id="s_ssim" min="0" max="1" step="0.01" value="0.80" oninput="onSlider('ssim',this.value)">
+          </div>
+          <div class="slider-row">
+            <div class="slider-header">
+              <span class="slider-label">LPIPS max <span class="slider-hint">↓ better</span></span>
+              <span class="slider-val" id="v_lpips">0.20</span>
+            </div>
+            <input type="range" id="s_lpips" min="0" max="1" step="0.01" value="0.20" oninput="onSlider('lpips',this.value)">
+          </div>
+          <div class="slider-row">
+            <div class="slider-header">
+              <span class="slider-label">DISTS max <span class="slider-hint">↓ better</span></span>
+              <span class="slider-val" id="v_dists">0.18</span>
+            </div>
+            <input type="range" id="s_dists" min="0" max="1" step="0.01" value="0.18" oninput="onSlider('dists',this.value)">
+          </div>
+        </div>
+
+        <div class="thresh-group">
+          <h4>Standard Quality</h4>
+          <div class="slider-row">
+            <div class="slider-header">
+              <span class="slider-label">Sharpness min <span class="slider-hint">Laplacian var</span></span>
+              <span class="slider-val" id="v_blur">100</span>
+            </div>
+            <input type="range" id="s_blur" min="0" max="500" step="5" value="100" oninput="onSlider('blur',this.value)">
+          </div>
+          <div class="slider-row">
+            <div class="slider-header">
+              <span class="slider-label">Noise max (σ) <span class="slider-hint">↓ better</span></span>
+              <span class="slider-val" id="v_noise">8.0</span>
+            </div>
+            <input type="range" id="s_noise" min="0" max="50" step="0.5" value="8" oninput="onSlider('noise',this.value)">
+          </div>
+          <div class="slider-row">
+            <div class="slider-header">
+              <span class="slider-label">Highlight clip max (%) <span class="slider-hint">blown pixels</span></span>
+              <span class="slider-val" id="v_highlight">1.0</span>
+            </div>
+            <input type="range" id="s_highlight" min="0" max="20" step="0.1" value="1" oninput="onSlider('highlight',this.value)">
+          </div>
+          <div class="slider-row">
+            <div class="slider-header">
+              <span class="slider-label">Shadow clip max (%) <span class="slider-hint">crushed blacks</span></span>
+              <span class="slider-val" id="v_shadow">1.0</span>
+            </div>
+            <input type="range" id="s_shadow" min="0" max="20" step="0.1" value="1" oninput="onSlider('shadow',this.value)">
+          </div>
+        </div>
+
+        <div class="thresh-group">
+          <h4>Artifact Severity</h4>
+          <div class="slider-row">
+            <div class="slider-header">
+              <span class="slider-label">Hot pixel HIGH (frac.) <span class="slider-hint">% of pixels</span></span>
+              <span class="slider-val" id="v_hot">0.0010</span>
+            </div>
+            <input type="range" id="s_hot" min="0" max="0.1" step="0.0005" value="0.001" oninput="onSlider('hot',this.value)">
+          </div>
+          <div class="slider-row">
+            <div class="slider-header">
+              <span class="slider-label">Lens flare HIGH count <span class="slider-hint">blob count</span></span>
+              <span class="slider-val" id="v_flare">3</span>
+            </div>
+            <input type="range" id="s_flare" min="1" max="50" step="1" value="3" oninput="onSlider('flare',this.value)">
+          </div>
+          <div class="slider-row">
+            <div class="slider-header">
+              <span class="slider-label">Banding HIGH ratio <span class="slider-hint">FFT energy</span></span>
+              <span class="slider-val" id="v_banding">0.50</span>
+            </div>
+            <input type="range" id="s_banding" min="0" max="1" step="0.01" value="0.50" oninput="onSlider('banding',this.value)">
+          </div>
+          <div class="slider-row">
+            <div class="slider-header">
+              <span class="slider-label">Blurry region HIGH (%) <span class="slider-hint">tile fraction</span></span>
+              <span class="slider-val" id="v_blurry">0.50</span>
+            </div>
+            <input type="range" id="s_blurry" min="0" max="1" step="0.01" value="0.50" oninput="onSlider('blurry',this.value)">
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- Options -->
+    <div class="card">
+      <div class="card-title">⚙ Options</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <label class="opt-row">
+          <input type="checkbox" id="cropPreview" checked>
+          Auto-crop camera UI chrome (preview recordings)
+        </label>
+        <div class="opt-row" id="syncRow" style="display:none">
+          <label>Video sync:</label>
+          <select class="opt-select" id="syncMode">
+            <option value="auto">Auto (SSIM cross-correlation)</option>
+            <option value="frame_by_frame">Frame-by-frame</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Run -->
+    <button class="run-btn" id="runBtn" onclick="runAnalysis()">Run Analysis ▶</button>
+
+  </div><!-- /panel-left -->
+
+  <!-- RIGHT PANEL -->
+  <div class="panel-right" id="resultsPanel">
+    <div class="empty-state" id="emptyState">
+      <div class="icon">🖼</div>
+      <div>Upload a media file and click Run to see results.</div>
+      <div style="font-size:11px">Supports JPEG · PNG · HEIC · WEBP · MP4 · MOV · AVI</div>
+    </div>
+
+    <div id="resultsContent" style="display:none">
+
+      <!-- Grade Banner -->
+      <div class="grade-banner pass" id="gradeBanner">
+        <div>
+          <div class="grade-badge" id="gradeText">PASS</div>
+          <div class="grade-sub" id="gradeMode">Image · No-Reference Analysis</div>
+        </div>
+        <div class="spacer"></div>
+        <div style="text-align:right">
+          <div class="grade-time" id="gradeTime"></div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px" id="gradeId"></div>
+        </div>
+      </div>
+
+      <!-- Failures -->
+      <div class="card" id="failSection" style="display:none;margin-bottom:14px">
+        <div class="card-title">❌ Issues Detected</div>
+        <div id="failList"></div>
+      </div>
+
+      <!-- Metric Tabs -->
+      <div class="metric-tabs">
+        <button class="mtab active" onclick="switchMTab('quality',this)">Quality</button>
+        <button class="mtab" onclick="switchMTab('friqa',this)" id="frTabBtn">FR-IQA</button>
+        <button class="mtab" onclick="switchMTab('nriqa',this)">NR-IQA</button>
+        <button class="mtab" onclick="switchMTab('artifacts',this)">Artifacts</button>
+        <button class="mtab" onclick="switchMTab('comparison',this)" id="cmpTabBtn" style="display:none">DUT vs REF</button>
+        <button class="mtab" onclick="switchMTab('api',this)">📋 API</button>
+      </div>
+
+      <!-- Quality Panel -->
+      <div class="mpanel" id="panel_quality">
+        <div class="metrics-grid" id="qualityGrid"></div>
+      </div>
+
+      <!-- FR-IQA Panel -->
+      <div class="mpanel" id="panel_friqa" style="display:none">
+        <div id="frNote" style="font-size:12px;color:var(--muted);padding:20px;text-align:center;display:none">
+          Full-reference scores are only computed in Compare mode (requires a reference file).
+        </div>
+        <div class="metrics-grid" id="frGrid"></div>
+      </div>
+
+      <!-- NR-IQA Panel -->
+      <div class="mpanel" id="panel_nriqa" style="display:none">
+        <div class="metrics-grid" id="nrGrid"></div>
+        <p style="font-size:11px;color:var(--muted);margin-top:10px;line-height:1.6">
+          BRISQUE &amp; NIQE — classical, lower = better quality.<br>
+          MUSIQ &amp; CLIP-IQA — neural (enable with <code>QIMC_USE_NEURAL_NR=true</code>), higher = better.
+        </p>
+      </div>
+
+      <!-- Artifacts Panel -->
+      <div class="mpanel" id="panel_artifacts" style="display:none">
+        <table class="art-table">
+          <thead>
+            <tr>
+              <th>Artifact</th>
+              <th>Severity</th>
+              <th>Confidence</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody id="artifactRows"></tbody>
+        </table>
+      </div>
+
+      <!-- DUT vs REF Panel -->
+      <div class="mpanel" id="panel_comparison" style="display:none">
+        <table class="cmp-table" id="cmpTable">
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>DUT</th>
+              <th>REF</th>
+              <th>Delta</th>
+              <th>Δ%</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="cmpRows"></tbody>
+        </table>
+      </div>
+
+      <!-- API Panel -->
+      <div class="mpanel" id="panel_api" style="display:none">
+        <div class="card-title" style="margin-bottom:8px">Equivalent cURL Command</div>
+        <div class="curl-wrap">
+          <div class="curl-panel" id="curlPanel"></div>
+          <button class="copy-btn" onclick="copyText('curlPanel')">Copy</button>
+        </div>
+        <div class="card-title" style="margin:14px 0 8px">Raw JSON Report</div>
+        <div class="curl-wrap">
+          <div class="json-panel" id="jsonPanel"></div>
+          <button class="copy-btn" onclick="copyText('jsonPanel')">Copy</button>
+        </div>
+      </div>
+
+      <!-- Image Viewer -->
+      <div class="img-viewer" id="imgViewer">
+        <div class="img-vtabs">
+          <button class="itab active" onclick="switchImg('annotated',this)">Annotated</button>
+          <button class="itab" onclick="switchImg('diff',this)" id="diffTabBtn">Diff Heatmap</button>
+          <button class="itab" onclick="switchImg('original',this)">Original DUT</button>
+          <button class="itab" onclick="switchImg('sidebyside',this)" id="sbsTabBtn">⇔ Side by Side</button>
+        </div>
+
+        <!-- Single image view (annotated / diff / original) -->
+        <div class="img-container" id="singleImgWrap">
+          <img id="mainImage" src="" alt="" style="display:none">
+          <div class="img-placeholder" id="imgPlaceholder">No image available</div>
+        </div>
+        <div class="img-actions" id="singleImgActions">
+          <button class="btn-sm" onclick="window.open(document.getElementById('mainImage').src,'_blank')">🔍 Full Size</button>
+          <button class="btn-sm" onclick="downloadImg()">⬇ Download</button>
+        </div>
+
+        <!-- Side-by-Side synchronized view -->
+        <div class="sbs-outer" id="sbsOuter">
+          <div class="sbs-controls">
+            <label>Left:</label>
+            <select class="sbs-ctrl-sel" id="sbsLeftSel" onchange="loadSbsImages()">
+              <option value="dut_annotated">DUT Annotated</option>
+              <option value="dut_original">DUT Original</option>
+            </select>
+            <label>Right:</label>
+            <select class="sbs-ctrl-sel" id="sbsRightSel" onchange="loadSbsImages()">
+              <option value="ref_original">REF Original</option>
+              <option value="diff">Diff Heatmap</option>
+              <option value="ref_annotated">REF Annotated (DUT)</option>
+            </select>
+            <button class="btn-sm" onclick="sbsReset()">↺ Reset View</button>
+            <button class="btn-sm" onclick="sbsFitAll()">⊡ Fit</button>
+            <span class="sbs-zoom-info" id="sbsZoomInfo">100%</span>
+          </div>
+          <div class="sbs-layout" id="sbsLayout">
+            <!-- Left panel -->
+            <div class="sbs-panel" id="sbsPanelL">
+              <div class="sbs-panel-label" id="sbsLabelL">DUT</div>
+              <div class="sbs-panel-fail-badge" id="sbsBadgeL"></div>
+              <img class="sbs-img" id="sbsImgL" draggable="false" alt="">
+              <div class="sbs-empty" id="sbsEmptyL">No image</div>
+            </div>
+            <!-- Divider -->
+            <div class="sbs-divider" id="sbsDivider"></div>
+            <!-- Right panel -->
+            <div class="sbs-panel" id="sbsPanelR">
+              <div class="sbs-panel-label" id="sbsLabelR">REF</div>
+              <div class="sbs-panel-fail-badge" id="sbsBadgeR"></div>
+              <img class="sbs-img" id="sbsImgR" draggable="false" alt="">
+              <div class="sbs-empty" id="sbsEmptyR">No image</div>
+            </div>
+          </div>
+          <div style="padding:6px 12px;font-size:10px;color:var(--muted)">
+            🖱 Scroll to zoom · Drag to pan · Both panels stay in sync · Ctrl+Scroll = fine zoom
+          </div>
+        </div>
+
+      </div>
+
+    </div><!-- /resultsContent -->
+  </div><!-- /panel-right -->
+
+</div><!-- /main-layout -->
+
+<!-- Reports Panel -->
+<div id="reportsLayout" style="display:none">
+  <div class="reports-panel">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <h2 style="font-size:15px;font-weight:700">Report History</h2>
+      <button class="btn-sm" onclick="loadReports()">↻ Refresh</button>
+    </div>
+    <div class="rep-filters">
+      <label style="font-size:11px;color:var(--muted)">Grade:</label>
+      <select class="opt-select" id="filterGrade" onchange="loadReports()">
+        <option value="">All</option>
+        <option value="pass">PASS</option>
+        <option value="warning">WARNING</option>
+        <option value="fail">FAIL</option>
+      </select>
+      <label style="font-size:11px;color:var(--muted)">Media:</label>
+      <select class="opt-select" id="filterMedia" onchange="loadReports()">
+        <option value="">All</option>
+        <option value="image_captured">Image</option>
+        <option value="video_static">Video</option>
+      </select>
+    </div>
+    <table class="rep-table">
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Report ID</th>
+          <th>Type</th>
+          <th>Grade</th>
+          <th>DUT File</th>
+          <th>Issues</th>
+        </tr>
+      </thead>
+      <tbody id="reportsBody"></tbody>
+    </table>
+    <div class="pg-bar">
+      <button class="pg-btn" id="pgPrev" onclick="changePg(-1)">← Prev</button>
+      <span class="pg-info" id="pgInfo">Page 1</span>
+      <button class="pg-btn" id="pgNext" onclick="changePg(1)">Next →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-wrap" id="toastWrap"></div>
+
+<!-- ─── Script ─────────────────────────────────────────────────────────────── -->
+<script>
+// ─── State ──────────────────────────────────────────────────────────────────
+const S = {
+  mode:       'analyze',
+  dutFile:    null,
+  refFile:    null,
+  dutUrl:     null,   // object URL for DUT original preview
+  refUrl:     null,   // object URL for REF original preview
+  report:     null,
+  reportId:   null,
+  imgTab:     'annotated',
+  mTab:       'quality',
+  pgPage:     0,
+  pgSize:     20,
+};
+
+// ─── Profile presets (mirror config.py) ────────────────────────────────────
+const PROFILES = {
+  low:      { psnr:8,   ssim:0.35, lpips:0.60, dists:0.50, blur:40,  noise:20,  highlight:5,   shadow:5,   hot:0.05,   flare:30, banding:0.75, blurry:0.80 },
+  medium:   { psnr:20,  ssim:0.60, lpips:0.40, dists:0.35, blur:70,  noise:12,  highlight:2,   shadow:2,   hot:0.01,   flare:8,  banding:0.65, blurry:0.65 },
+  high:     { psnr:28,  ssim:0.80, lpips:0.20, dists:0.18, blur:100, noise:8,   highlight:1,   shadow:1,   hot:0.001,  flare:3,  banding:0.50, blurry:0.50 },
+  critical: { psnr:35,  ssim:0.92, lpips:0.08, dists:0.08, blur:150, noise:4,   highlight:0.5, shadow:0.5, hot:0.0005, flare:2,  banding:0.40, blurry:0.35 },
+};
+const PROFILE_DESC = {
+  low:      '<b style="color:var(--pass)">LOW</b> — Unstable rig / outdoor / handheld. Lenient thresholds.',
+  medium:   '<b style="color:var(--warn)">MEDIUM</b> — Semi-stable indoor / lightbox with minor vibration.',
+  high:     '<b style="color:var(--accent)">HIGH</b> — Stable lightbox + tripod; standard controlled QA.',
+  critical: '<b style="color:#a855f7">CRITICAL</b> — Robotic / pixel-aligned rig; professional studio.',
+  custom:   '<b style="color:var(--muted)">CUSTOM</b> — Manual thresholds. Sliders override the profile.',
+};
+let T = { ...PROFILES.high };   // current thresholds
+let activeProfile = 'high';
+
+// ─── Init ───────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  applyProfile('high');
+  checkHealth();
+  setInterval(checkHealth, 30000);
+  setupDrop('dutZone', 'dut');
+  setupDrop('refZone', 'ref');
+  sbsInitEvents();
+});
+
+// ─── Health ──────────────────────────────────────────────────────────────────
+async function checkHealth() {
+  const base = apiBase();
+  const dot  = document.getElementById('healthDot');
+  const txt  = document.getElementById('healthText');
+  try {
+    const r = await fetch(base + '/health', { signal: AbortSignal.timeout(4000) });
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    dot.className = 'health-dot online';
+    txt.textContent = `Online · ${d.device || 'cpu'}`;
+  } catch {
+    dot.className = 'health-dot offline';
+    txt.textContent = 'Offline';
+  }
+}
+
+function apiBase() {
+  return document.getElementById('apiBase').value.trim().replace(/\/$/, '');
+}
+
+// ─── Mode switching ──────────────────────────────────────────────────────────
+function switchMode(mode, btn) {
+  S.mode = mode;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const isRep = mode === 'reports';
+  document.getElementById('mainLayout').style.display    = isRep ? 'none' : 'grid';
+  document.getElementById('reportsLayout').style.display = isRep ? 'block' : 'none';
+  document.getElementById('refCard').style.display       = mode === 'compare' ? 'block' : 'none';
+  document.getElementById('syncRow').style.display       = mode === 'compare' ? 'flex' : 'none';
+  document.getElementById('runBtn').textContent = mode === 'compare' ? 'Run Comparison ▶' : 'Run Analysis ▶';
+  if (isRep) loadReports();
+}
+
+// ─── File handling ───────────────────────────────────────────────────────────
+function setupDrop(zoneId, which) {
+  const z = document.getElementById(zoneId);
+  z.addEventListener('dragover', e => { e.preventDefault(); z.classList.add('drag-over'); });
+  z.addEventListener('dragleave', () => z.classList.remove('drag-over'));
+  z.addEventListener('drop', e => {
+    e.preventDefault(); z.classList.remove('drag-over');
+    const f = e.dataTransfer.files[0];
+    if (f) setFile(which, f);
+  });
+}
+function handleFile(evt, which) { const f = evt.target.files[0]; if (f) setFile(which, f); }
+function setFile(which, file) {
+  if (which === 'dut') {
+    S.dutFile = file;
+    if (file.type.startsWith('image/')) S.dutUrl = URL.createObjectURL(file);
+  } else {
+    S.refFile = file;
+    if (file.type.startsWith('image/')) S.refUrl = URL.createObjectURL(file);
+  }
+  const zone = document.getElementById(which + 'Zone');
+  const nm   = document.getElementById(which + 'Name');
+  const pv   = document.getElementById(which + 'Preview');
+  zone.classList.add('has-file');
+  nm.textContent = `${file.name}  (${fmtBytes(file.size)})`; nm.style.display = 'block';
+  if (file.type.startsWith('image/')) { pv.src = URL.createObjectURL(file); pv.style.display = 'block'; }
+  else pv.style.display = 'none';
+}
+function clearFile(evt, which) {
+  evt.stopPropagation();
+  if (which === 'dut') { S.dutFile = null; S.dutUrl = null; }
+  else { S.refFile = null; S.refUrl = null; }
+  const zone = document.getElementById(which + 'Zone');
+  zone.classList.remove('has-file');
+  document.getElementById(which + 'Name').style.display = 'none';
+  const pv = document.getElementById(which + 'Preview'); pv.style.display = 'none'; pv.src = '';
+  document.getElementById(which + 'Input').value = '';
+}
+
+// ─── Profile / Sliders ───────────────────────────────────────────────────────
+function applyProfile(name) {
+  activeProfile = name;
+  T = { ...PROFILES[name] };
+  // sync sliders
+  const map = { psnr:'s_psnr', ssim:'s_ssim', lpips:'s_lpips', dists:'s_dists',
+                blur:'s_blur', noise:'s_noise', highlight:'s_highlight', shadow:'s_shadow',
+                hot:'s_hot', flare:'s_flare', banding:'s_banding', blurry:'s_blurry' };
+  for (const [k, id] of Object.entries(map)) {
+    const el = document.getElementById(id);
+    if (el) el.value = T[k];
+    renderSliderVal(k, T[k]);
+  }
+  document.querySelectorAll('.profile-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector(`.profile-btn.p-${name}`);
+  if (btn) btn.classList.add('active');
+  document.getElementById('profileDesc').innerHTML = PROFILE_DESC[name] || '';
+  if (S.report) reEvaluate();
+}
+function onSlider(key, val) {
+  T[key] = parseFloat(val);
+  renderSliderVal(key, T[key]);
+  if (activeProfile !== 'custom') {
+    activeProfile = 'custom';
+    document.querySelectorAll('.profile-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('profileDesc').innerHTML = PROFILE_DESC.custom;
+  }
+  if (S.report) reEvaluate();
+}
+function renderSliderVal(key, val) {
+  const el = document.getElementById('v_' + key);
+  if (!el) return;
+  const n = parseFloat(val);
+  if (['psnr','blur','noise','flare'].includes(key)) el.textContent = Number.isInteger(n) ? String(n) : n.toFixed(1);
+  else if (key === 'hot') el.textContent = n.toFixed(4);
+  else el.textContent = n.toFixed(2);
+}
+
+// ─── Run Analysis ────────────────────────────────────────────────────────────
+async function runAnalysis() {
+  if (!S.dutFile) { toast('Upload a DUT file first.', 'error'); return; }
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true; btn.classList.add('loading');
+  btn.textContent = 'Processing…';
+
+  const isCompare = S.mode === 'compare';
+  const fd = new FormData();
+  if (isCompare) {
+    fd.append('dut', S.dutFile, S.dutFile.name);
+    if (S.refFile) fd.append('reference', S.refFile, S.refFile.name);
+    fd.append('sync_mode', document.getElementById('syncMode').value);
+  } else {
+    fd.append('media', S.dutFile, S.dutFile.name);
+  }
+  fd.append('crop_preview', document.getElementById('cropPreview').checked);
+
+  const endpoint = isCompare ? '/compare' : '/analyze';
+  buildCurl(apiBase(), endpoint, isCompare);
+
+  try {
+    const t0 = Date.now();
+    const resp = await fetch(apiBase() + endpoint, { method: 'POST', body: fd });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: 'Server error' }));
+      throw new Error(err.detail || `HTTP ${resp.status}`);
+    }
+    S.report   = await resp.json();
+    S.reportId = resp.headers.get('X-Report-Id') || S.report.report_id;
+    S.elapsed  = Date.now() - t0;
+    renderResults(S.report);
+  } catch (e) {
+    toast('Analysis failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.classList.remove('loading');
+    btn.textContent = isCompare ? 'Run Comparison ▶' : 'Run Analysis ▶';
+  }
+}
+
+// ─── Render Results ──────────────────────────────────────────────────────────
+function renderResults(report) {
+  document.getElementById('emptyState').style.display    = 'none';
+  document.getElementById('resultsContent').style.display = 'block';
+
+  const isCompare = !!(report.reference_file);
+  document.getElementById('gradeMode').textContent =
+    `${report.media_type || 'image'} · ${isCompare ? 'Full-Reference Comparison' : 'No-Reference Analysis'}`;
+  document.getElementById('gradeTime').textContent =
+    `Processed in ${report.processing_time_ms || S.elapsed || 0} ms`;
+  document.getElementById('gradeId').textContent = `Report ID: ${S.reportId || '—'}`;
+
+  // Show/hide tabs
+  document.getElementById('cmpTabBtn').style.display = isCompare ? 'inline-block' : 'none';
+
+  reEvaluate();
+  renderQuality(report);
+  renderFR(report);
+  renderNR(report);
+  renderArtifacts(report);
+  renderComparison(report);
+  if (S.imgTab === 'sidebyside') loadSbsImages();
+  else showImg(S.imgTab);
+  document.getElementById('jsonPanel').textContent = JSON.stringify(report, null, 2);
+}
+
+// ─── Client-side threshold re-evaluation ────────────────────────────────────
+function reEvaluate() {
+  if (!S.report) return;
+  const report = S.report;
+  const qm = report.quality_metrics || {};
+  const fr = report.fr_scores;
+  const failures = [];
+
+  if (qm.blur_score != null && qm.blur_score < T.blur)
+    failures.push(`Blurry: sharpness ${qm.blur_score.toFixed(1)} < threshold ${T.blur.toFixed(1)}`);
+  if (qm.noise_sigma != null && qm.noise_sigma > T.noise)
+    failures.push(`High noise: σ=${qm.noise_sigma.toFixed(2)} > threshold ${T.noise.toFixed(2)}`);
+  if (qm.highlight_clipping_pct != null && qm.highlight_clipping_pct > T.highlight)
+    failures.push(`Highlight clipping: ${qm.highlight_clipping_pct.toFixed(2)}% > ${T.highlight.toFixed(1)}%`);
+  if (qm.shadow_clipping_pct != null && qm.shadow_clipping_pct > T.shadow)
+    failures.push(`Shadow clipping: ${qm.shadow_clipping_pct.toFixed(2)}% > ${T.shadow.toFixed(1)}%`);
+
+  if (fr) {
+    if (fr.psnr?.value  != null && fr.psnr.value  < T.psnr)  failures.push(`PSNR ${fr.psnr.value.toFixed(2)} dB < ${T.psnr.toFixed(1)} dB`);
+    if (fr.ssim?.value  != null && fr.ssim.value  < T.ssim)  failures.push(`SSIM ${fr.ssim.value.toFixed(4)} < ${T.ssim.toFixed(2)}`);
+    if (fr.lpips?.value != null && fr.lpips.value > T.lpips) failures.push(`LPIPS ${fr.lpips.value.toFixed(4)} > ${T.lpips.toFixed(2)}`);
+    if (fr.dists?.value != null && fr.dists.value > T.dists) failures.push(`DISTS ${fr.dists.value.toFixed(4)} > ${T.dists.toFixed(2)}`);
+  }
+
+  // Add server-side [vs REF] regressions verbatim
+  (report.failure_reasons || []).filter(r => r.startsWith('[vs REF]')).forEach(r => failures.push(r));
+
+  // Update grade
+  const grade = failures.length > 0 ? 'fail' : (report.overall_grade === 'warning' ? 'warning' : 'pass');
+  const banner = document.getElementById('gradeBanner');
+  banner.className = 'grade-banner ' + grade;
+  document.getElementById('gradeText').textContent = grade.toUpperCase();
+
+  // Update failures list
+  const sec  = document.getElementById('failSection');
+  const list = document.getElementById('failList');
+  if (failures.length > 0) {
+    sec.style.display = 'block';
+    list.innerHTML = failures.map(f => {
+      const cls = f.startsWith('[vs REF]') ? 'vs-ref' : '';
+      return `<div class="failure-item ${cls}">${esc(f)}</div>`;
+    }).join('');
+  } else {
+    sec.style.display = 'none';
+  }
+
+  // Re-render metric cards so colors update
+  renderQuality(report);
+  renderFR(report);
+}
+
+// ─── Quality Metrics ─────────────────────────────────────────────────────────
+const QM_DEFS = [
+  { key:'blur_score',              label:'Sharpness',      unit:'Lap.Var', higher:true,  thresh:()=>T.blur,      fmt:v=>v.toFixed(1) },
+  { key:'tenengrad_score',         label:'Tenengrad',      unit:'',        higher:true,  thresh:()=>null,        fmt:v=>v.toFixed(1) },
+  { key:'noise_sigma',             label:'Noise σ',        unit:'σ',       higher:false, thresh:()=>T.noise,     fmt:v=>v.toFixed(2) },
+  { key:'exposure_mean',           label:'Exposure',       unit:'L*',      higher:null,  thresh:()=>null,        fmt:v=>v.toFixed(1) },
+  { key:'highlight_clipping_pct',  label:'Highlights',     unit:'% clip',  higher:false, thresh:()=>T.highlight, fmt:v=>v.toFixed(2)+'%' },
+  { key:'shadow_clipping_pct',     label:'Shadows',        unit:'% clip',  higher:false, thresh:()=>T.shadow,    fmt:v=>v.toFixed(2)+'%' },
+  { key:'dynamic_range_stops',     label:'Dyn. Range',     unit:'stops',   higher:true,  thresh:()=>null,        fmt:v=>v.toFixed(1) },
+  { key:'saturation_mean',         label:'Saturation',     unit:'',        higher:null,  thresh:()=>null,        fmt:v=>v.toFixed(3) },
+  { key:'white_balance_deviation', label:'WB Deviation',   unit:'',        higher:false, thresh:()=>null,        fmt:v=>v.toFixed(3) },
+  { key:'color_cast_r',            label:'Color Cast R',   unit:'',        higher:null,  thresh:()=>null,        fmt:v=>v.toFixed(2) },
+  { key:'color_cast_g',            label:'Color Cast G',   unit:'',        higher:null,  thresh:()=>null,        fmt:v=>v.toFixed(2) },
+  { key:'color_cast_b',            label:'Color Cast B',   unit:'',        higher:null,  thresh:()=>null,        fmt:v=>v.toFixed(2) },
+  { key:'chromatic_aberration_score', label:'Chr. Aberr.', unit:'px',      higher:false, thresh:()=>null,        fmt:v=>v.toFixed(2) },
+];
+
+function renderQuality(report) {
+  const qm   = report.quality_metrics || {};
+  const grid = document.getElementById('qualityGrid');
+  grid.innerHTML = QM_DEFS.map(d => {
+    const val = qm[d.key];
+    if (val == null) return '';
+    const th = d.thresh();
+    let cls = '', bar = 50;
+    if (th != null) {
+      const ok = d.higher ? val >= th : val <= th;
+      cls = ok ? 'pass' : 'fail';
+      bar = d.higher ? Math.min(100, (val / (th * 2)) * 100) : Math.max(0, 100 - (val / (th * 2)) * 100);
+    }
+    return `<div class="metric-card ${cls}">
+      <div class="m-name">${d.label}</div>
+      <div class="m-value">${d.fmt(val)}</div>
+      <div class="m-unit">${d.unit}</div>
+      <div class="m-bar-wrap"><div class="m-bar" style="width:${bar.toFixed(0)}%"></div></div>
+      ${th != null ? `<div class="m-thresh">threshold: ${th}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ─── FR-IQA ──────────────────────────────────────────────────────────────────
+function renderFR(report) {
+  const fr   = report.fr_scores;
+  const grid = document.getElementById('frGrid');
+  const note = document.getElementById('frNote');
+  if (!fr) { note.style.display = 'block'; grid.innerHTML = ''; return; }
+  note.style.display = 'none';
+  const items = [
+    { key:'psnr',    label:'PSNR',    unit:'dB', higher:true,  th:()=>T.psnr,  fmt:v=>v.toFixed(2) },
+    { key:'ssim',    label:'SSIM',    unit:'',   higher:true,  th:()=>T.ssim,  fmt:v=>v.toFixed(4) },
+    { key:'ms_ssim', label:'MS-SSIM', unit:'',   higher:true,  th:()=>0.85,    fmt:v=>v.toFixed(4) },
+    { key:'lpips',   label:'LPIPS',   unit:'',   higher:false, th:()=>T.lpips, fmt:v=>v.toFixed(4) },
+    { key:'dists',   label:'DISTS',   unit:'',   higher:false, th:()=>T.dists, fmt:v=>v.toFixed(4) },
+  ];
+  grid.innerHTML = items.map(d => {
+    const m = fr[d.key];
+    if (!m || m.value == null) return '';
+    const th  = d.th();
+    const ok  = d.higher ? m.value >= th : m.value <= th;
+    const cls = ok ? 'pass' : 'fail';
+    const bar = d.higher ? Math.min(100,(m.value/(th*1.5))*100) : Math.max(0,100-(m.value/(th*1.5))*100);
+    return `<div class="metric-card ${cls}">
+      <div class="m-name">${d.label}</div>
+      <div class="m-value">${d.fmt(m.value)}</div>
+      <div class="m-unit">${d.unit}</div>
+      <div class="m-bar-wrap"><div class="m-bar" style="width:${bar.toFixed(0)}%"></div></div>
+      <div class="m-thresh">threshold: ${th}</div>
+    </div>`;
+  }).join('');
+}
+
+// ─── NR-IQA ──────────────────────────────────────────────────────────────────
+function renderNR(report) {
+  const nr   = report.nr_scores || {};
+  const grid = document.getElementById('nrGrid');
+  const NR = [
+    { key:'brisque',  label:'BRISQUE',  unit:'0–100, ↓ better', good:v=>v<40, warn:v=>v<60, bar:v=>Math.max(0,100-v) },
+    { key:'niqe',     label:'NIQE',     unit:'↓ better',        good:v=>v<3,  warn:v=>v<6,  bar:v=>Math.max(0,100-v*10) },
+    { key:'musiq',    label:'MUSIQ',    unit:'0–100, ↑ better', good:v=>v>60, warn:v=>v>40, bar:v=>Math.min(100,v) },
+    { key:'clip_iqa', label:'CLIP-IQA', unit:'0–1, ↑ better',   good:v=>v>0.6,warn:v=>v>0.4,bar:v=>Math.min(100,v*100) },
+  ];
+  grid.innerHTML = NR.map(d => {
+    const val = nr[d.key];
+    if (val == null) return `<div class="metric-card"><div class="m-name">${d.label}</div><div class="m-value" style="color:var(--muted);font-size:14px">N/A</div><div class="m-unit">${d.unit}</div></div>`;
+    const cls = d.good(val) ? 'pass' : d.warn(val) ? 'warn' : 'fail';
+    return `<div class="metric-card ${cls}">
+      <div class="m-name">${d.label}</div>
+      <div class="m-value">${val.toFixed(2)}</div>
+      <div class="m-unit">${d.unit}</div>
+      <div class="m-bar-wrap"><div class="m-bar" style="width:${d.bar(val).toFixed(0)}%"></div></div>
+    </div>`;
+  }).join('');
+}
+
+// ─── Artifacts ───────────────────────────────────────────────────────────────
+function renderArtifacts(report) {
+  const arts  = report.artifacts?.artifacts || [];
+  const tbody = document.getElementById('artifactRows');
+  if (!arts.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px">No artifacts detected ✓</td></tr>';
+    return;
+  }
+  tbody.innerHTML = arts.map(a => {
+    const sev = (a.severity || 'none').toLowerCase();
+    const conf = a.confidence != null ? (a.confidence * 100).toFixed(0) + '%' : '—';
+    return `<tr>
+      <td><b>${esc(a.artifact_type || '—')}</b></td>
+      <td><span class="sev-badge sev-${sev}">${sev.toUpperCase()}</span></td>
+      <td style="font-family:monospace">${conf}</td>
+      <td style="color:var(--muted);font-size:11px">${esc(a.description || '')}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ─── DUT vs REF Comparison ───────────────────────────────────────────────────
+const CMP_ROWS = [
+  { key:'sharpness',           label:'Sharpness',        higher:true,  unit:''     },
+  { key:'noise',               label:'Noise σ',          higher:false, unit:'σ'    },
+  { key:'exposure',            label:'Exposure',         higher:null,  unit:'L*'   },
+  { key:'highlight_clipping',  label:'Highlight clip',   higher:false, unit:'%'    },
+  { key:'shadow_clipping',     label:'Shadow clip',      higher:false, unit:'%'    },
+  { key:'white_balance',       label:'WB Deviation',     higher:false, unit:''     },
+  { key:'chromatic_aberration',label:'Chr. Aberration',  higher:false, unit:'px'   },
+];
+
+function renderComparison(report) {
+  const qc = report.quality_comparison;
+  if (!qc) return;
+  const tbody = document.getElementById('cmpRows');
+  tbody.innerHTML = CMP_ROWS.map(def => {
+    const m = qc[def.key];
+    if (!m) return '';
+    const sign = m.delta >= 0 ? '+' : '';
+    const pct  = m.delta_pct != null ? `${m.delta >= 0 ? '+' : ''}${m.delta_pct.toFixed(1)}%` : '—';
+    let deltaClass = 'delta-neu', badgeCls = 'reg-neu', badgeTxt = '—';
+    if (m.regression) {
+      deltaClass = 'delta-bad'; badgeCls = 'reg-fail'; badgeTxt = 'REGRESSION';
+    } else if (def.higher !== null) {
+      const good = (def.higher && m.delta >= 0) || (!def.higher && m.delta <= 0);
+      deltaClass = good ? 'delta-good' : 'delta-bad';
+      badgeCls   = good ? 'reg-ok' : 'reg-warn';
+      badgeTxt   = good ? 'OK' : 'WORSE';
+    }
+    return `<tr>
+      <td>${def.label} <span style="font-size:10px;color:var(--muted)">${def.unit}</span></td>
+      <td class="dut-val">${m.dut.toFixed(3)}</td>
+      <td class="ref-val">${m.ref.toFixed(3)}</td>
+      <td class="${deltaClass}">${sign}${m.delta.toFixed(3)}</td>
+      <td class="${deltaClass}">${pct}</td>
+      <td><span class="reg-badge ${badgeCls}">${badgeTxt}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+// ─── Image viewer ────────────────────────────────────────────────────────────
+function switchImg(tab, btn) {
+  S.imgTab = tab;
+  document.querySelectorAll('.itab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const isSbs = tab === 'sidebyside';
+  document.getElementById('singleImgWrap').style.display    = isSbs ? 'none' : '';
+  document.getElementById('singleImgActions').style.display = isSbs ? 'none' : '';
+  document.getElementById('sbsOuter').classList.toggle('active', isSbs);
+  if (isSbs) { loadSbsImages(); sbsFitAll(); }
+  else showImg(tab);
+}
+function showImg(tab) {
+  const base = apiBase();
+  const img  = document.getElementById('mainImage');
+  const ph   = document.getElementById('imgPlaceholder');
+  let url = null;
+  if (tab === 'original' && S.dutUrl)  url = S.dutUrl;
+  else if (S.reportId) {
+    if (tab === 'annotated') url = `${base}/report/${S.reportId}/annotated?t=${Date.now()}`;
+    if (tab === 'diff')      url = `${base}/report/${S.reportId}/diff?t=${Date.now()}`;
+  }
+  if (url) {
+    img.style.display = 'block'; ph.style.display = 'none';
+    img.src = url;
+    img.onerror = () => {
+      img.style.display = 'none'; ph.style.display = 'block';
+      ph.textContent = tab === 'diff' ? 'Diff heatmap only available in Compare mode' : 'Image not available';
+    };
+  } else {
+    img.style.display = 'none'; ph.style.display = 'block'; ph.textContent = 'No image available';
+  }
+}
+function downloadImg() {
+  const img = document.getElementById('mainImage');
+  if (!img.src) return;
+  const a = document.createElement('a'); a.href = img.src;
+  a.download = `qimc_${S.imgTab}_${S.reportId || 'report'}.png`; a.click();
+}
+
+// ─── Side-by-Side synchronized zoom/pan engine ───────────────────────────────
+const VS = { scale:1, tx:0, ty:0, dragging:false, lastX:0, lastY:0 };
+
+function sbsApplyTransform() {
+  const t = `translate(${VS.tx.toFixed(2)}px,${VS.ty.toFixed(2)}px) scale(${VS.scale.toFixed(4)})`;
+  document.getElementById('sbsImgL').style.transform = t;
+  document.getElementById('sbsImgR').style.transform = t;
+  document.getElementById('sbsZoomInfo').textContent = `${(VS.scale * 100).toFixed(0)}%`;
+}
+
+function sbsOnWheel(e) {
+  e.preventDefault();
+  const fine = e.ctrlKey;
+  const factor = e.deltaY < 0 ? (fine ? 1.05 : 1.18) : (fine ? 0.95 : 0.85);
+  const rect = document.getElementById('sbsPanelL').getBoundingClientRect();
+  // Use center of layout as zoom anchor when cursor is on divider/outside
+  const mx = Math.max(0, e.clientX - rect.left);
+  const my = Math.max(0, e.clientY - rect.top);
+  const newScale = Math.min(50, Math.max(0.05, VS.scale * factor));
+  VS.tx = mx - (mx - VS.tx) * (newScale / VS.scale);
+  VS.ty = my - (my - VS.ty) * (newScale / VS.scale);
+  VS.scale = newScale;
+  sbsApplyTransform();
+}
+
+function sbsOnMouseDown(e) {
+  if (e.button !== 0) return;
+  VS.dragging = true; VS.lastX = e.clientX; VS.lastY = e.clientY;
+  e.currentTarget.style.cursor = 'grabbing';
+}
+function sbsOnMouseMove(e) {
+  if (!VS.dragging) return;
+  VS.tx += e.clientX - VS.lastX;
+  VS.ty += e.clientY - VS.lastY;
+  VS.lastX = e.clientX; VS.lastY = e.clientY;
+  sbsApplyTransform();
+}
+function sbsOnMouseUp(e) {
+  VS.dragging = false;
+  document.getElementById('sbsPanelL').style.cursor = 'grab';
+  document.getElementById('sbsPanelR').style.cursor = 'grab';
+}
+
+// Touch support (pinch-zoom + drag)
+let _touches = [], _lastPinchDist = 0;
+function sbsOnTouchStart(e) {
+  _touches = Array.from(e.touches);
+  if (_touches.length === 1) { VS.dragging = true; VS.lastX = _touches[0].clientX; VS.lastY = _touches[0].clientY; }
+  if (_touches.length === 2) { VS.dragging = false; _lastPinchDist = Math.hypot(_touches[1].clientX - _touches[0].clientX, _touches[1].clientY - _touches[0].clientY); }
+}
+function sbsOnTouchMove(e) {
+  e.preventDefault();
+  _touches = Array.from(e.touches);
+  if (_touches.length === 1 && VS.dragging) {
+    VS.tx += _touches[0].clientX - VS.lastX; VS.ty += _touches[0].clientY - VS.lastY;
+    VS.lastX = _touches[0].clientX; VS.lastY = _touches[0].clientY;
+    sbsApplyTransform();
+  }
+  if (_touches.length === 2) {
+    const dist = Math.hypot(_touches[1].clientX - _touches[0].clientX, _touches[1].clientY - _touches[0].clientY);
+    const factor = dist / _lastPinchDist;
+    const cx = (_touches[0].clientX + _touches[1].clientX) / 2;
+    const cy = (_touches[0].clientY + _touches[1].clientY) / 2;
+    const rect = document.getElementById('sbsPanelL').getBoundingClientRect();
+    const mx = cx - rect.left, my = cy - rect.top;
+    const newScale = Math.min(50, Math.max(0.05, VS.scale * factor));
+    VS.tx = mx - (mx - VS.tx) * (newScale / VS.scale);
+    VS.ty = my - (my - VS.ty) * (newScale / VS.scale);
+    VS.scale = newScale; _lastPinchDist = dist;
+    sbsApplyTransform();
+  }
+}
+function sbsOnTouchEnd(e) { _touches = Array.from(e.touches); if (!_touches.length) VS.dragging = false; }
+
+function sbsReset() { VS.scale = 1; VS.tx = 0; VS.ty = 0; sbsApplyTransform(); }
+
+function sbsFitAll() {
+  // Fit the image to the panel dimensions
+  const img = document.getElementById('sbsImgL');
+  const panel = document.getElementById('sbsPanelL');
+  if (!img.naturalWidth || !panel.clientWidth) return;
+  const scaleX = panel.clientWidth  / img.naturalWidth;
+  const scaleY = panel.clientHeight / img.naturalHeight;
+  VS.scale = Math.min(scaleX, scaleY, 1);
+  VS.tx = (panel.clientWidth  - img.naturalWidth  * VS.scale) / 2;
+  VS.ty = (panel.clientHeight - img.naturalHeight * VS.scale) / 2;
+  sbsApplyTransform();
+}
+
+function _sbsSetImage(imgEl, emptyEl, labelEl, url, label) {
+  labelEl.textContent = label;
+  if (url) {
+    emptyEl.style.display = 'none';
+    imgEl.style.display = 'block';
+    imgEl.src = url;
+    imgEl.onload = () => sbsFitAll();
+    imgEl.onerror = () => { imgEl.style.display = 'none'; emptyEl.style.display = 'flex'; emptyEl.textContent = 'Not available'; };
+  } else {
+    imgEl.style.display = 'none'; emptyEl.style.display = 'flex';
+    emptyEl.textContent = 'No image — upload a file first';
+  }
+}
+
+function loadSbsImages() {
+  const base  = apiBase();
+  const lSel  = document.getElementById('sbsLeftSel').value;
+  const rSel  = document.getElementById('sbsRightSel').value;
+  const imgL  = document.getElementById('sbsImgL');
+  const imgR  = document.getElementById('sbsImgR');
+  const emL   = document.getElementById('sbsEmptyL');
+  const emR   = document.getElementById('sbsEmptyR');
+  const lblL  = document.getElementById('sbsLabelL');
+  const lblR  = document.getElementById('sbsLabelR');
+
+  function urlFor(sel) {
+    if (sel === 'dut_original')  return S.dutUrl;
+    if (sel === 'ref_original')  return S.refUrl;
+    if (sel === 'dut_annotated' && S.reportId) return `${base}/report/${S.reportId}/annotated?t=${Date.now()}`;
+    if (sel === 'ref_annotated' && S.reportId) return `${base}/report/${S.reportId}/annotated?t=${Date.now()}`;
+    if (sel === 'diff' && S.reportId)          return `${base}/report/${S.reportId}/diff?t=${Date.now()}`;
+    return null;
+  }
+  const LABELS = { dut_original:'DUT Original', ref_original:'REF Original',
+    dut_annotated:'DUT Annotated', ref_annotated:'Annotated', diff:'Diff Heatmap' };
+
+  _sbsSetImage(imgL, emL, lblL, urlFor(lSel), LABELS[lSel] || 'Left');
+  _sbsSetImage(imgR, emR, lblR, urlFor(rSel), LABELS[rSel] || 'Right');
+  sbsReset();
+}
+
+function sbsInitEvents() {
+  const panels = [document.getElementById('sbsPanelL'), document.getElementById('sbsPanelR')];
+  const layout = document.getElementById('sbsLayout');
+  panels.forEach(p => {
+    p.addEventListener('wheel',      sbsOnWheel,     { passive:false });
+    p.addEventListener('mousedown',  sbsOnMouseDown);
+    p.addEventListener('touchstart', sbsOnTouchStart,{ passive:false });
+    p.addEventListener('touchmove',  sbsOnTouchMove, { passive:false });
+    p.addEventListener('touchend',   sbsOnTouchEnd);
+  });
+  // Global mouse move/up (allows dragging even if cursor leaves panel)
+  document.addEventListener('mousemove', sbsOnMouseMove);
+  document.addEventListener('mouseup',   sbsOnMouseUp);
+  // Keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    if (S.imgTab !== 'sidebyside') return;
+    if (e.key === '0') sbsReset();
+    if (e.key === 'f' || e.key === 'F') sbsFitAll();
+    if (e.key === '+' || e.key === '=') { VS.scale = Math.min(50, VS.scale * 1.2); sbsApplyTransform(); }
+    if (e.key === '-') { VS.scale = Math.max(0.05, VS.scale / 1.2); sbsApplyTransform(); }
+  });
+}
+
+// ─── Tab switching ───────────────────────────────────────────────────────────
+function switchMTab(tab, btn) {
+  S.mTab = tab;
+  document.querySelectorAll('.mtab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.mpanel').forEach(p => p.style.display = 'none');
+  document.getElementById('panel_' + tab).style.display = 'block';
+}
+
+// ─── cURL builder ────────────────────────────────────────────────────────────
+function buildCurl(base, endpoint, isCompare) {
+  const crop = document.getElementById('cropPreview').checked ? 'true' : 'false';
+  const cmd = isCompare
+    ? `curl -X POST "${base}${endpoint}" \\\n  -F "dut=@YOUR_DUT_FILE.jpg" \\\n  -F "reference=@YOUR_REF_FILE.jpg" \\\n  -F "crop_preview=${crop}" \\\n  -F "sync_mode=auto"`
+    : `curl -X POST "${base}${endpoint}" \\\n  -F "media=@YOUR_FILE.jpg" \\\n  -F "crop_preview=${crop}"`;
+  document.getElementById('curlPanel').textContent = cmd;
+}
+function copyText(elId) {
+  const el  = document.getElementById(elId);
+  const btn = el.nextElementSibling;
+  navigator.clipboard.writeText(el.textContent).then(() => {
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 1500);
+  });
+}
+
+// ─── Reports ─────────────────────────────────────────────────────────────────
+async function loadReports() {
+  const grade = document.getElementById('filterGrade').value;
+  const media = document.getElementById('filterMedia').value;
+  const off   = S.pgPage * S.pgSize;
+  let url = `${apiBase()}/reports?limit=${S.pgSize}&offset=${off}`;
+  if (grade) url += `&grade=${grade}`;
+  if (media) url += `&media_type=${media}`;
+  const tbody = document.getElementById('reportsBody');
+  tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px" class="loading-pulse">Loading…</td></tr>`;
+  try {
+    const r = await fetch(url);
+    const d = await r.json();
+    const rows = d.reports || [];
+    document.getElementById('pgInfo').textContent = `Page ${S.pgPage + 1} · ${rows.length} results`;
+    document.getElementById('pgPrev').disabled = S.pgPage === 0;
+    document.getElementById('pgNext').disabled = rows.length < S.pgSize;
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">No reports found.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rows.map(row => {
+      const g = (row.grade || 'pass').toLowerCase();
+      const badge = `<span class="sev-badge sev-${g === 'pass' ? 'low' : g === 'warning' ? 'medium' : 'high'}">${g.toUpperCase()}</span>`;
+      const ts = row.timestamp ? new Date(row.timestamp).toLocaleString() : '—';
+      return `<tr onclick="openReportFromHistory('${row.report_id}')">
+        <td style="color:var(--muted);font-size:11px">${ts}</td>
+        <td style="font-family:monospace;font-size:10px">${(row.report_id||'').slice(0,12)}…</td>
+        <td style="font-size:11px">${row.media_type || '—'}</td>
+        <td>${badge}</td>
+        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">${esc(row.dut_file || '—')}</td>
+        <td style="font-family:monospace">${row.failure_count || 0}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--fail);padding:20px">Error: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+async function openReportFromHistory(reportId) {
+  try {
+    const r = await fetch(`${apiBase()}/report/${reportId}`);
+    if (!r.ok) throw new Error('Not found');
+    const report = await r.json();
+    S.report = report; S.reportId = reportId; S.dutUrl = null; S.refUrl = null;
+    // Go to analyze tab
+    const analyzeBtn = document.querySelector('.tab-btn[data-mode="analyze"]');
+    switchMode(report.reference_file ? 'compare' : 'analyze', analyzeBtn);
+    renderResults(report);
+    buildCurl(apiBase(), report.reference_file ? '/compare' : '/analyze', !!report.reference_file);
+  } catch (e) {
+    toast('Failed to load report: ' + e.message, 'error');
+  }
+}
+
+function changePg(dir) {
+  S.pgPage = Math.max(0, S.pgPage + dir);
+  loadReports();
+}
+
+// ─── Toast ───────────────────────────────────────────────────────────────────
+function toast(msg, type = '') {
+  const wrap = document.getElementById('toastWrap');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+// ─── Utilities ───────────────────────────────────────────────────────────────
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function fmtBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n/1024).toFixed(1) + ' KB';
+  return (n/1048576).toFixed(1) + ' MB';
+}
+</script>
+</body>
+</html>

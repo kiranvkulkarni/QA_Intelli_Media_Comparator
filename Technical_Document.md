@@ -13,6 +13,7 @@
 2. [Design Principles](#2-design-principles)
 3. [Domain Models](#3-domain-models)
 4. [Service Layer — Detailed Algorithms](#4-service-layer--detailed-algorithms)
+   - 4.0 [CameraModeDetector](#40-cameramodedetector)
    - 4.1 [MediaTypeDetector](#41-mediatypedetector)
    - 4.2 [PreviewCropper](#42-previewcropper)
    - 4.3 [QualityMetricsExtractor](#43-qualitymetricsextractor)
@@ -124,6 +125,23 @@ For a given pair of inputs with identical configuration, the service produces id
 ComparisonReport
 ├── MediaType (enum)
 ├── CropResult (optional)
+├── MediaMetadata — dut_metadata (EXIF + detected camera mode)
+│   ├── make, model, software
+│   ├── exposure_time, f_number, iso, focal_length_mm, focal_length_35mm
+│   ├── flash_fired, scene_capture_type, exposure_program
+│   ├── camera_mode: CameraMode (enum)
+│   ├── camera_mode_confidence: float
+│   ├── camera_mode_source: str
+│   └── mode_notes: List[str]
+├── MediaMetadata — ref_metadata (optional, compare mode only)
+├── MetadataComparison (optional, compare mode only)
+│   ├── modes_match: bool
+│   ├── dut_mode / ref_mode: CameraMode
+│   ├── iso_delta: int
+│   ├── exposure_delta_stops: float
+│   ├── f_number_match: bool
+│   ├── focal_length_match: bool
+│   └── notes: List[str]
 ├── QualityMetrics
 │   ├── blur_score: float
 │   ├── noise_sigma: float
@@ -192,6 +210,118 @@ Pass/fail threshold for artifacts: `HIGH` or `CRITICAL` → report.overall_grade
 ---
 
 ## 4. Service Layer — Detailed Algorithms
+
+### 4.0 CameraModeDetector
+
+**File:** `services/camera_mode_detector.py`
+
+#### 4.0.1 Purpose
+
+Smartphone cameras produce radically different optical output depending on the shooting mode. Without mode awareness, Portrait bokeh, Night high-ISO noise, Sport motion-blur, and Macro shallow-DoF are all misreported as defects in NR analysis mode. This service:
+
+1. Extracts standard EXIF metadata from image files using Pillow.
+2. Infers the shooting mode from EXIF tags and heuristics.
+3. Applies multiplicative threshold adjustments to the active Settings object so all downstream services (QualityMetrics, ArtifactDetector) automatically use mode-corrected limits.
+4. In compare mode, compares DUT vs REF EXIF to surface setting differences that explain quality gaps without being genuine regressions.
+
+#### 4.0.2 EXIF Extraction
+
+Uses `PIL.Image._getexif()` (Pillow, already a project dependency) which returns a `{tag_id: value}` dict. Values are decoded using `PIL.ExifTags.TAGS`. Key fields extracted:
+
+| EXIF Field | Tag name | Type | Usage |
+|---|---|---|---|
+| Make / Model / Software | 271, 272, 305 | string | Device identity in report |
+| DateTimeOriginal | 36867 | string | Capture timestamp |
+| ExposureTime | 33434 | IFDRational / tuple | Night/Sport heuristic |
+| FNumber | 33437 | IFDRational / tuple | Aperture comparison |
+| ISOSpeedRatings | 34855 | int | Night/Sport heuristic |
+| FocalLength | 37386 | IFDRational | Focal length display |
+| FocalLengthIn35mmFilm | 41989 | int | Zoom level comparison |
+| Flash | 37385 | int (bit flags) | Bit 0 = fired |
+| SceneCaptureType | 41990 | int | 2=Portrait, 3=Night |
+| ExposureProgram | 34850 | int | 7=Portrait, 8=Landscape |
+| UserComment | 37510 | bytes | Mode keyword search |
+| ImageDescription | 270 | string | Mode keyword search |
+| XPComment | 40092 | UTF-16-LE bytes | Mode keyword search (Windows) |
+
+`ExposureTime` and `FNumber` are IFDRational in modern Pillow — `float(val)` converts them. The code also handles legacy `tuple(numerator, denominator)` form for compatibility with older images.
+
+#### 4.0.3 Camera Mode Detection (Priority Order)
+
+```
+Priority 1 — Text field keyword search (confidence 0.90)
+  Concatenate UserComment + ImageDescription + XPComment (decoded)
+  Search for mode-specific keywords (case-insensitive):
+    portrait, bokeh, depth effect, live focus → PORTRAIT
+    night, night mode, nightsight, low light  → NIGHT
+    sport, action, burst                      → SPORT
+    macro, close-up                           → MACRO
+    hdr, high dynamic range                   → HDR
+    panorama, pano, stitch                    → PANORAMA
+    pro, manual, expert                       → PRO
+
+Priority 2 — EXIF SceneCaptureType tag (confidence 0.85)
+  1 → LANDSCAPE, 2 → PORTRAIT, 3 → NIGHT
+
+Priority 3 — EXIF ExposureProgram tag (confidence 0.80)
+  7 → PORTRAIT, 8 → LANDSCAPE
+
+Priority 4 — Heuristic from ISO + ExposureTime (confidence 0.55–0.70)
+  ISO ≥ 3200 AND shutter ≥ 1/8 s   → NIGHT (0.70)
+  ISO ≥ 1600 AND shutter ≥ 1/30 s  → NIGHT (0.55)
+  ISO ≥ 800  AND shutter < 1/250 s → SPORT (0.55)
+
+Priority 5 — Default (confidence 0.50)
+  → AUTO (no threshold adjustment)
+```
+
+The `camera_mode_source` field records which priority level produced the result (`user_comment`, `exif_scene_type`, `exif_exposure_program`, `heuristic`, `default`, or `media_type` for video).
+
+#### 4.0.4 Threshold Adjustment Mechanism
+
+Mode adjustments are **multiplicative factors** applied on top of the currently active settings (which may already reflect a quality-profile override from the API route):
+
+| Mode | `blur_threshold` | `noise_threshold` | `highlight_clip_threshold` | `shadow_clip_threshold` |
+|---|---|---|---|---|
+| **Portrait** | × 0.15 | × 1.5 | — | — |
+| **Night** | × 0.30 | × 4.0 | × 3.0 | × 2.0 |
+| **Sport** | × 0.30 | × 2.0 | — | — |
+| **Macro** | × 0.15 | × 1.3 | — | — |
+| **HDR** | — | — | × 3.0 | × 3.0 |
+| **Panorama** | × 0.50 | × 1.5 | — | — |
+| All others | 1.0 | 1.0 | 1.0 | 1.0 |
+
+`apply_mode_adjustments()` calls `base_settings.model_copy(update=overrides)` — a pydantic v2 shallow copy via `model_construct` that does **not** re-run `model_post_init`, so the quality-profile preset already baked into `base_settings` is preserved in the copy.
+
+The adjusted Settings object is pushed into `_request_settings` (ContextVar) in the pipeline via a `try/finally` block, so all downstream `get_settings()` calls within the same async task context see the mode-corrected thresholds. The token is reset in the `finally` block after analysis completes.
+
+**Composition example:**
+
+```
+Quality profile: high   → blur_threshold = 100.0
+Camera mode:     night  → blur_threshold × 0.30
+Effective limit:         → blur_threshold = 30.0
+```
+
+This means a Night photo only fails the blur check if its sharpness score is below 30, rather than the 100 that would apply to a standard daytime capture.
+
+#### 4.0.5 Metadata Comparison (compare mode)
+
+`MetadataComparison.build(dut_meta, ref_meta)` produces a structured side-by-side comparison:
+
+- **Mode mismatch**: if DUT mode ≠ REF mode (both non-unknown), a note is added explaining quality differences may be mode-driven.
+- **ISO delta**: difference ≥ 400 ISO → note that DUT is operating at higher sensitivity.
+- **Exposure stop delta**: `log₂(DUT_t / REF_t)` ≥ 1 stop → note explaining brightness/motion-blur differences.
+- **Aperture mismatch**: `|DUT_f − REF_f| ≥ 0.5` → note on DoF and exposure differences.
+- **Focal length mismatch**: 35 mm-equivalent differs by > 5 mm → critical note that FR-IQA scores will be intrinsically low due to different zoom levels.
+
+All notes are surfaced in `failure_reasons` with `[Metadata]` prefix — advisory only, never causes FAIL grade.
+
+#### 4.0.6 Video Handling
+
+Video files (`.mp4`, `.mov`, `.avi`, `.mkv`, `.ts`, `.mts`, `.webm`) do not carry standard EXIF. A skeletal `MediaMetadata` with `camera_mode=VIDEO` and `camera_mode_source=media_type` is returned immediately. No threshold adjustments are applied for video (the video analyzer's own per-frame analysis handles quality assessment).
+
+---
 
 ### 4.1 MediaTypeDetector
 
@@ -801,6 +931,15 @@ run(dut_path, reference_path=None, sync_mode=AUTO, crop_preview=True)
 ├── 1. MediaTypeDetector.detect(dut_path)
 │       → MediaInfo (media_type, w, h, fps, ...)
 │
+├── 1b. CameraModeDetector.detect(dut_path)  ← NEW
+│       CameraModeDetector.detect(ref_path)  ← NEW (if reference provided)
+│       → MediaMetadata (EXIF + camera_mode enum)
+│
+│       CameraModeDetector.apply_mode_adjustments(camera_mode, get_settings())
+│       → effective_settings (mode-adjusted thresholds)
+│       _request_settings.set(effective_settings)  ← pushed to ContextVar
+│       [all downstream get_settings() calls now see mode-corrected thresholds]
+│
 ├── 2. [if IMAGE and crop_preview and is_preview]
 │       PreviewCropper.crop_image(dut_img)   → (cropped_dut, CropResult)
 │       PreviewCropper.crop_image(ref_img)   → (cropped_ref, CropResult)
@@ -821,8 +960,11 @@ run(dut_path, reference_path=None, sync_mode=AUTO, crop_preview=True)
 │               (quality_metrics, artifacts, temporal)
 │
 ├── 4. Build ComparisonReport
+│       MetadataComparison.build(dut_meta, ref_meta)  ← NEW (compare mode)
 │       report.compute_overall_grade()
 │           → aggregates FR failures + QM failures + artifact failures + temporal failures
+│           → appends camera mode notes ([Mode] prefix)       ← NEW
+│           → appends metadata comparison notes ([Metadata])  ← NEW
 │           → populates failure_reasons list
 │
 ├── 5. AnnotationRenderer.render(report, img, diff_heatmap) → annotated_bgr
@@ -831,7 +973,9 @@ run(dut_path, reference_path=None, sync_mode=AUTO, crop_preview=True)
 ├── 6. [if diff_heatmap]
 │       AnnotationRenderer.save(diff_heatmap, reports_dir/{id}_diff.png)
 │
-└── 7. Return ComparisonReport
+├── 7. Return ComparisonReport
+│
+└── [finally] _request_settings.reset(mode_token)  ← ContextVar cleaned up
 ```
 
 #### Grade Computation Logic
@@ -873,8 +1017,18 @@ def compute_overall_grade(self) -> QualityGrade:
         grade = WARNING
         reasons.append("BRISQUE score indicates poor quality")
 
+    # Camera mode notes — advisory only, never cause FAIL  ← NEW
+    for note in dut_metadata.mode_notes:
+        reasons.append(f"[Mode] {note}")
+
+    # Metadata comparison notes — advisory only           ← NEW
+    for note in metadata_comparison.notes:
+        reasons.append(f"[Metadata] {note}")
+
     return grade
 ```
+
+**Note:** Thresholds used in the quality checks above (`blur_threshold`, `noise_threshold`, `highlight_clip_threshold`, `shadow_clip_threshold`) are read from `get_settings()` at evaluation time. Because the pipeline has already pushed mode-adjusted settings into the `_request_settings` ContextVar before calling `compute_overall_grade()`, the threshold values are automatically the mode-corrected ones — no special-casing needed in the grade computation itself.
 
 ---
 

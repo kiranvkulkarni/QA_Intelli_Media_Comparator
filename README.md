@@ -65,6 +65,9 @@ The service accepts media from the **Golden Reference model** and the **Device U
 |---|---|
 | **Auto media detection** | Image vs video (magic bytes + extension), preview vs captured, static vs motion video |
 | **Preview UI cropping** | 3-strategy cascade: contour detection → saturation mask → heuristic margin crop |
+| **Camera mode detection** | Reads EXIF to detect Portrait, Night, Sport, Macro, HDR, Panorama — automatically relaxes thresholds for expected optical characteristics |
+| **EXIF metadata extraction** | Make/model, ISO, shutter speed, aperture, focal length, flash, scene type — included in every report |
+| **Metadata comparison** | DUT vs REF side-by-side EXIF diff; flags ISO mismatch, focal-length mismatch, mode mismatch |
 | **No-reference IQA** | BRISQUE, NIQE (always); MUSIQ, CLIP-IQA+ (optional, GPU) |
 | **Full-reference IQA** | PSNR, SSIM, MS-SSIM, LPIPS, DISTS with pass/fail thresholds |
 | **Spatial alignment** | SIFT keypoint matching + RANSAC homography before comparison |
@@ -235,6 +238,77 @@ To switch profiles: edit `QIMC_QUALITY_PROFILE=` in `.env` and restart the servi
 
 ---
 
+### Camera Mode Awareness
+
+The service automatically reads the EXIF metadata of every image file and detects the smartphone camera mode. This matters because many modes produce optical characteristics that are **intentional** — and should not be flagged as defects:
+
+| Mode | Expected characteristic | Auto-adjustment |
+|---|---|---|
+| **Portrait** | Intentional background bokeh; low blur score in background regions | `blur_threshold × 0.15` — only extreme overall unsharpness fails |
+| **Night** | High ISO + long exposure; elevated noise and slight motion blur | `noise_threshold × 4.0`, `blur_threshold × 0.30`, highlight/shadow clip × 3.0 |
+| **Sport / Action** | Fast shutter but higher ISO; motion blur on fast subjects | `blur_threshold × 0.30`, `noise_threshold × 2.0` |
+| **Macro** | Very shallow depth of field; background always blurry | `blur_threshold × 0.15`, `noise_threshold × 1.3` |
+| **HDR** | Multiple exposures merged; extreme highlights/shadows clipped | `highlight_clip_threshold × 3.0`, `shadow_clip_threshold × 3.0` |
+| **Panorama** | Stitched from many frames; minor sharpness loss at seams | `blur_threshold × 0.50`, `noise_threshold × 1.5` |
+| **Auto / Landscape / Pro** | Standard expectations | No adjustment |
+
+Mode adjustments are **multiplicative on top of the active quality profile** — so if you use `QIMC_QUALITY_PROFILE=high` (blur_threshold=100) and the image is in Night mode, the effective threshold becomes 30. This means both dimensions compose correctly.
+
+#### Detection method (priority order)
+
+1. **EXIF text fields** — `UserComment`, `ImageDescription`, `XPComment` are searched for mode keywords (e.g. "Portrait", "Night Sight", "Bokeh"). Confidence: 90%.
+2. **EXIF SceneCaptureType** — tag values 1 (Landscape), 2 (Portrait), 3 (Night). Confidence: 85%.
+3. **EXIF ExposureProgram** — tag values 7 (Portrait), 8 (Landscape). Confidence: 80%.
+4. **Heuristic** — ISO ≥ 3200 + shutter ≥ 1/8 s → Night; ISO ≥ 800 + shutter < 1/250 s → Sport. Confidence: 55–70%.
+5. **Default** — if no signal found → `auto` (no threshold adjustment).
+
+#### In compare mode
+
+When both DUT and REF are provided, the service additionally compares their EXIF metadata and surfaces differences that explain quality gaps without being defects:
+
+- **Mode mismatch** — if DUT is in Night mode but REF was captured in Auto, the quality differences may be mode-driven, not a DUT regression.
+- **ISO delta** — large ISO difference (≥ 400 ISO) means the DUT is likely noisier for a legitimate reason.
+- **Exposure time delta** — ≥ 1 stop difference in shutter speed may explain brightness or motion-blur differences.
+- **Aperture mismatch** — different f-numbers affect depth of field and exposure.
+- **Focal length mismatch** — different zoom levels make FR-IQA comparisons (SSIM, PSNR) inherently low and should be flagged.
+
+All metadata observations appear in `failure_reasons` prefixed with `[Mode]` or `[Metadata]` and are **advisory only** — they never cause a FAIL grade on their own.
+
+#### What is included in the report
+
+```json
+"dut_metadata": {
+  "make": "Samsung",
+  "model": "SM-S926B",
+  "software": "S926BXXU3BXKA",
+  "datetime_original": "2026:03:08 14:23:11",
+  "exposure_time": "1/2500",
+  "exposure_time_s": 0.0004,
+  "f_number": 1.8,
+  "iso": 50,
+  "focal_length_mm": 6.3,
+  "focal_length_35mm": 24,
+  "flash_fired": false,
+  "scene_capture_type": 2,
+  "camera_mode": "portrait",
+  "camera_mode_confidence": 0.85,
+  "camera_mode_source": "exif_scene_type",
+  "mode_notes": ["Mode 'portrait' from EXIF SceneCaptureType=2."]
+},
+"metadata_comparison": {
+  "modes_match": true,
+  "dut_mode": "portrait",
+  "ref_mode": "portrait",
+  "iso_delta": 0,
+  "exposure_delta_stops": 0.1,
+  "f_number_match": true,
+  "focal_length_match": true,
+  "notes": []
+}
+```
+
+---
+
 ### Full Configuration Reference
 
 | Variable | Default | Description |
@@ -325,6 +399,7 @@ Compare a DUT media file against an optional golden reference.
 | `sync_mode` | string | No | `auto` (default) or `frame_by_frame` |
 | `crop_preview` | bool | No | Auto-crop camera UI chrome (default: `true`) |
 | `force_media_type` | string | No | Override auto-detection: `image_captured`, `image_preview`, `video_static`, `video_motion` |
+| `quality_profile` | string | No | Per-request profile override: `low` \| `medium` \| `high` \| `critical`. Overrides server default for this request only. |
 
 **Response** — `200 OK`
 
@@ -397,6 +472,7 @@ No-reference quality analysis of a single media file.
 |---|---|---|---|
 | `media` | file | Yes | Image or video to analyze |
 | `crop_preview` | bool | No | Auto-crop camera UI chrome (default: `true`) |
+| `quality_profile` | string | No | Per-request profile override: `low` \| `medium` \| `high` \| `critical`. |
 
 **Response** — Same `ComparisonReport` schema as `/compare` (with `fr_scores: null`).
 
@@ -921,14 +997,16 @@ QA_Intelli_Media_Comparator/
 │   │       └── reports.py                  ← GET /report/* + GET /reports
 │   │
 │   ├── models/
-│   │   ├── enums.py                        ← MediaType, ArtifactSeverity, QualityGrade, SyncMode
+│   │   ├── enums.py                        ← MediaType, CameraMode, ArtifactSeverity, QualityGrade, SyncMode
 │   │   ├── media.py                        ← MediaInfo, CropResult
+│   │   ├── metadata.py                     ← MediaMetadata, MetadataComparison
 │   │   ├── metrics.py                      ← MetricResult, FullReferenceScores, NoReferenceScores, QualityMetrics
 │   │   ├── artifacts.py                    ← ArtifactInstance, ArtifactReport
 │   │   ├── video.py                        ← VideoTemporalMetrics, VideoAnalysisResult
 │   │   └── report.py                       ← ComparisonReport
 │   │
 │   ├── services/
+│   │   ├── camera_mode_detector.py         ← EXIF extraction, camera mode inference, threshold adjustment
 │   │   ├── media_type_detector.py          ← Auto-detect media type
 │   │   ├── preview_cropper.py              ← Crop camera UI chrome
 │   │   ├── quality_metrics.py              ← Standard photographic metrics

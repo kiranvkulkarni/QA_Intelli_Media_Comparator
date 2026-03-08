@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextvars import ContextVar
 from functools import lru_cache
 from pathlib import Path
 
@@ -185,6 +186,21 @@ class Settings(BaseSettings):
         return self.device
 
 
+# Per-request settings override (used by API routes to apply a quality_profile
+# for a single request without touching the global cached singleton).
+_request_settings: ContextVar[Settings | None] = ContextVar("_request_settings", default=None)
+
+
 @lru_cache(maxsize=1)
-def get_settings() -> Settings:
+def _global_settings() -> Settings:
     return Settings()
+
+
+def get_settings() -> Settings:
+    """Return the effective settings for the current context.
+
+    If a per-request profile override has been set via `_request_settings`,
+    that is returned; otherwise the global cached singleton is used.
+    """
+    override = _request_settings.get()
+    return override if override is not None else _global_settings()

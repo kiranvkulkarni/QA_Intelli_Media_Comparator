@@ -113,28 +113,34 @@ class QualityMetrics(BaseModel):
         return QualityGrade.FAIL
 
     def failure_reasons(self) -> list[str]:
+        from qa_intelli_media_comparator.config import get_settings
+        s = get_settings()
         reasons: list[str] = []
         if self.blur_grade == QualityGrade.FAIL:
             reasons.append(
                 f"Image is blurry: sharpness score {self.blur_score:.1f} "
-                f"(threshold {100.0:.1f}). Check camera focus or motion blur."
+                f"(threshold {s.blur_threshold:.1f}). Check camera focus or motion blur."
             )
         if self.noise_grade == QualityGrade.FAIL:
             reasons.append(
-                f"High noise: sigma {self.noise_sigma:.2f} px "
-                f"(threshold {8.0:.2f}). Check ISO setting or lighting."
+                f"High noise: sigma {self.noise_sigma:.2f} "
+                f"(threshold {s.noise_threshold:.2f}). Check ISO setting or lighting."
             )
-        if self.highlight_clipping_pct and self.highlight_clipping_pct > 1.0:
+        if self.highlight_clipping_pct and self.highlight_clipping_pct > s.highlight_clip_threshold:
             reasons.append(
-                f"Highlight clipping: {self.highlight_clipping_pct:.2f}% pixels blown out. "
-                "Reduce exposure."
+                f"Highlight clipping: {self.highlight_clipping_pct:.2f}% pixels blown out "
+                f"(threshold {s.highlight_clip_threshold:.1f}%). Reduce exposure."
             )
-        if self.shadow_clipping_pct and self.shadow_clipping_pct > 1.0:
+        if self.shadow_clipping_pct and self.shadow_clipping_pct > s.shadow_clip_threshold:
             reasons.append(
-                f"Shadow clipping: {self.shadow_clipping_pct:.2f}% pixels crushed to black. "
-                "Increase exposure or check HDR tone mapping."
+                f"Shadow clipping: {self.shadow_clipping_pct:.2f}% pixels crushed to black "
+                f"(threshold {s.shadow_clip_threshold:.1f}%). Increase exposure or check HDR tone mapping."
             )
         return reasons
+
+    def build_comparison(self, ref: "QualityMetrics") -> "QualityComparison":
+        """Build a structured DUT vs Reference comparison object."""
+        return QualityComparison.build(self, ref)
 
     def comparison_failure_reasons(self, ref: QualityMetrics) -> list[str]:
         """Return failure reasons when DUT regresses significantly vs reference.
@@ -215,3 +221,74 @@ class QualityMetrics(BaseModel):
                 )
 
         return reasons
+
+
+# ---------------------------------------------------------------------------
+# Structured DUT vs Reference comparison
+# ---------------------------------------------------------------------------
+
+class MetricComparison(BaseModel):
+    """Per-metric DUT vs Reference comparison result."""
+    dut: float
+    ref: float
+    delta: float                            # dut - ref (positive = DUT higher)
+    delta_pct: Optional[float] = None       # (delta / |ref|) * 100
+    regression: bool = False                # True if DUT regressed beyond threshold
+
+
+class QualityComparison(BaseModel):
+    """Structured DUT vs Reference quality comparison (compare mode only)."""
+    sharpness: Optional[MetricComparison] = None
+    noise: Optional[MetricComparison] = None
+    exposure: Optional[MetricComparison] = None
+    highlight_clipping: Optional[MetricComparison] = None
+    shadow_clipping: Optional[MetricComparison] = None
+    white_balance: Optional[MetricComparison] = None
+    chromatic_aberration: Optional[MetricComparison] = None
+
+    @classmethod
+    def build(cls, dut: "QualityMetrics", ref: "QualityMetrics") -> "QualityComparison":
+        def _cmp(dv: Optional[float], rv: Optional[float],
+                 regression_check) -> Optional[MetricComparison]:
+            if dv is None or rv is None:
+                return None
+            delta = dv - rv
+            pct = (delta / abs(rv) * 100) if rv != 0 else None
+            return MetricComparison(
+                dut=round(dv, 4),
+                ref=round(rv, 4),
+                delta=round(delta, 4),
+                delta_pct=round(pct, 2) if pct is not None else None,
+                regression=regression_check(dv, rv),
+            )
+
+        return cls(
+            sharpness=_cmp(
+                dut.blur_score, ref.blur_score,
+                lambda d, r: r > 0 and (d / r) < 0.70,
+            ),
+            noise=_cmp(
+                dut.noise_sigma, ref.noise_sigma,
+                lambda d, r: r > 0 and d > r * 1.50,
+            ),
+            exposure=_cmp(
+                dut.exposure_mean, ref.exposure_mean,
+                lambda d, r: abs(d - r) > 15,
+            ),
+            highlight_clipping=_cmp(
+                dut.highlight_clipping_pct, ref.highlight_clipping_pct,
+                lambda d, r: (d - r) > 2.0,
+            ),
+            shadow_clipping=_cmp(
+                dut.shadow_clipping_pct, ref.shadow_clipping_pct,
+                lambda d, r: (d - r) > 2.0,
+            ),
+            white_balance=_cmp(
+                dut.white_balance_deviation, ref.white_balance_deviation,
+                lambda d, r: (d - r) > 0.08,
+            ),
+            chromatic_aberration=_cmp(
+                dut.chromatic_aberration_score, ref.chromatic_aberration_score,
+                lambda d, r: (d - r) > 1.5,
+            ),
+        )

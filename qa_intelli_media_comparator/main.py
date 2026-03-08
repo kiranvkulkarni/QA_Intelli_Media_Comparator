@@ -130,6 +130,44 @@ def _print_report(report) -> None:
         t.add_row(name, val)
     console.print(t)
 
+    # DUT vs Reference quality comparison (compare mode only)
+    qc = getattr(report, "quality_comparison", None)
+    if qc is not None:
+        from rich.table import Table as RichTable
+        ct = RichTable(title="DUT vs Reference — Quality Comparison")
+        ct.add_column("Metric", style="dim")
+        ct.add_column("DUT", justify="right")
+        ct.add_column("REF", justify="right")
+        ct.add_column("Delta", justify="right")
+        ct.add_column("Δ%", justify="right")
+        ct.add_column("Status", justify="center")
+
+        _rows = [
+            ("Sharpness",          qc.sharpness,           True),
+            ("Noise σ",            qc.noise,               False),
+            ("Exposure (L*)",      qc.exposure,            None),
+            ("Highlight clip%",    qc.highlight_clipping,  False),
+            ("Shadow clip%",       qc.shadow_clipping,     False),
+            ("WB Deviation",       qc.white_balance,       False),
+            ("Chrom. Aberr. (px)", qc.chromatic_aberration, False),
+        ]
+        for label, m, higher_better in _rows:
+            if m is None:
+                continue
+            sign = "+" if m.delta >= 0 else ""
+            pct_str = f"{sign}{m.delta_pct:.1f}%" if m.delta_pct is not None else "—"
+            if m.regression:
+                status = "[bold red]REGRESSION[/bold red]"
+            elif higher_better is None:
+                status = "[dim]—[/dim]"
+            elif (higher_better and m.delta >= 0) or (not higher_better and m.delta <= 0):
+                status = "[green]OK[/green]"
+            else:
+                status = "[yellow]WORSE[/yellow]"
+            ct.add_row(label, f"{m.dut:.3f}", f"{m.ref:.3f}",
+                       f"{sign}{m.delta:.3f}", pct_str, status)
+        console.print(ct)
+
     if report.annotated_image_path:
         console.print(f"[green]Annotated image:[/green] {report.annotated_image_path}")
     console.print(f"[dim]Processed in {report.processing_time_ms} ms[/dim]")

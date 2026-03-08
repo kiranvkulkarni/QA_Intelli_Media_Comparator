@@ -9,6 +9,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 from ..dependencies import get_pipeline, get_report_store
+from ...config import Settings, _request_settings
 from ...models.enums import SyncMode
 from ...models.report import ComparisonReport
 
@@ -27,6 +28,9 @@ async def _save_upload(upload: UploadFile, suffix: str) -> Path:
         tmp.close()
 
 
+_VALID_PROFILES = {"low", "medium", "high", "critical"}
+
+
 @router.post("/compare", tags=["comparison"], response_model=ComparisonReport)
 async def compare(
     dut: UploadFile = File(..., description="DUT media file (image or video)"),
@@ -34,16 +38,39 @@ async def compare(
     sync_mode: str = Form("auto", description="Video sync: 'auto' or 'frame_by_frame'"),
     crop_preview: bool = Form(True, description="Auto-crop camera UI chrome"),
     force_media_type: Optional[str] = Form(None, description="Override auto-detection"),
+    quality_profile: Optional[str] = Form(
+        None,
+        description="Per-request quality profile override: low | medium | high | critical. "
+                    "Overrides server-side QIMC_QUALITY_PROFILE for this request only.",
+    ),
 ) -> JSONResponse:
     """
     Compare a DUT media file against an optional golden reference.
 
     Supports images (JPEG, PNG, HEIC, WEBP) and videos (MP4, MOV, AVI, MKV).
     Auto-detects image vs video and preview vs captured.
+
+    **Quality profiles** (per-request, overrides server default):
+    - `low` — unstable rig / outdoor / handheld
+    - `medium` — semi-stable indoor / lightbox
+    - `high` — stable lightbox + tripod (default)
+    - `critical` — robotic / pixel-aligned rig
     """
     dut_suffix = Path(dut.filename or "file").suffix or ".tmp"
     dut_path = await _save_upload(dut, dut_suffix)
     ref_path: Optional[Path] = None
+
+    # Apply per-request quality profile (scoped to this async context only)
+    token = None
+    if quality_profile:
+        profile = quality_profile.strip().lower()
+        if profile not in _VALID_PROFILES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid quality_profile '{quality_profile}'. "
+                       f"Must be one of: {', '.join(sorted(_VALID_PROFILES))}",
+            )
+        token = _request_settings.set(Settings(quality_profile=profile))
 
     try:
         if reference is not None:
@@ -78,6 +105,8 @@ async def compare(
         return response
 
     finally:
+        if token is not None:
+            _request_settings.reset(token)
         dut_path.unlink(missing_ok=True)
         if ref_path:
             ref_path.unlink(missing_ok=True)

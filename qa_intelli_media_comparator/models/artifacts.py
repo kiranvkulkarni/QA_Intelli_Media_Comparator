@@ -11,7 +11,7 @@ class ArtifactInstance(BaseModel):
     """A single detected artifact with its location and human-readable context."""
     artifact_type: str                          # e.g. "noise_patch", "banding", "lens_flare"
     severity: ArtifactSeverity
-    bbox: Optional[tuple[int, int, int, int]] = None  # x, y, w, h in pixels (None = whole frame)
+    bbox: Optional[tuple[int, int, int, int]] = Field(None, exclude=True)  # used internally for annotation rendering; excluded from JSON output
     confidence: float = Field(1.0, ge=0.0, le=1.0)
     description: str = ""                       # human-readable explanation + fix hint
 
