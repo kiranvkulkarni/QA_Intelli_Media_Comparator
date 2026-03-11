@@ -92,6 +92,19 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # ── Analysis mode ──────────────────────────────────────────────────────
+    analysis_mode: str = Field(
+        "quality",
+        description=(
+            "Default analysis depth for all requests. "
+            "'functional' — fast path (< 100ms): functional validity checks + basic "
+            "quality metrics; skips all neural IQA (BRISQUE, NIQE, LPIPS, DISTS). "
+            "Ideal for camera functional test automation loops. "
+            "'quality' — full path (current behaviour): all IQA metrics + functional checks. "
+            "Can be overridden per-request via the 'analysis_mode' form parameter."
+        ),
+    )
+
     # ── Quality profile (overrides all thresholds when set) ────────────────
     quality_profile: str = Field(
         "",

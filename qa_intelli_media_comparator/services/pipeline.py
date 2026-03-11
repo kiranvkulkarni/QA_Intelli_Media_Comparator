@@ -24,11 +24,12 @@ import cv2
 import numpy as np
 
 from ..config import get_settings, _request_settings
-from ..models.enums import MediaType, SyncMode
+from ..models.enums import MediaType, QualityGrade, SyncMode
 from ..models.metadata import MetadataComparison
-from ..models.metrics import FullReferenceScores
+from ..models.metrics import FullReferenceScores, NoReferenceScores
 from ..models.report import ComparisonReport
 from .camera_mode_detector import CameraModeDetector
+from .functionality_checker import FunctionalityChecker
 from .media_type_detector import MediaTypeDetector
 from .preview_cropper import PreviewCropper
 from .quality_metrics import QualityMetricsExtractor
@@ -41,10 +42,111 @@ from .annotation_renderer import AnnotationRenderer
 log = logging.getLogger(__name__)
 
 
+# ── Functional mode metric grade merger ───────────────────────────────────────
+
+def _merge_functional_metric_grades(
+    grade: QualityGrade,
+    reasons: list[str],
+    nr_scores: Optional[NoReferenceScores],
+    ref_nr_scores: Optional[NoReferenceScores],
+    fr_scores: Optional[FullReferenceScores],
+) -> tuple[QualityGrade, list[str]]:
+    """Fold BRISQUE delta + LPIPS + DISTS results into functional grade/reasons.
+
+    Called by the functional mode branch to augment the go/no-go checks already
+    produced by FunctionalityChecker with perceptual metric verdicts.
+    """
+    reasons = list(reasons)  # don't mutate the caller's list
+
+    # ── BRISQUE absolute floor ─────────────────────────────────────────────────
+    if nr_scores and nr_scores.brisque is not None:
+        b = nr_scores.brisque
+        if b > 70:
+            reasons.append(
+                f"BRISQUE {b:.1f} > 70 — poor perceptual quality "
+                "(likely affected by distortion, blur, or noise)."
+            )
+            grade = QualityGrade.FAIL
+        elif b > 50:
+            reasons.append(
+                f"BRISQUE {b:.1f} > 50 — moderate quality degradation detected."
+            )
+            if grade == QualityGrade.PASS:
+                grade = QualityGrade.WARNING
+
+    # ── BRISQUE delta vs reference ─────────────────────────────────────────────
+    if (
+        nr_scores and ref_nr_scores
+        and nr_scores.brisque is not None
+        and ref_nr_scores.brisque is not None
+    ):
+        delta = nr_scores.brisque - ref_nr_scores.brisque
+        if delta > 15:
+            reasons.append(
+                f"Quality regression: BRISQUE DUT={nr_scores.brisque:.1f} vs "
+                f"REF={ref_nr_scores.brisque:.1f} (+{delta:.1f}) — "
+                "DUT quality significantly degraded vs golden reference."
+            )
+            grade = QualityGrade.FAIL
+        elif delta > 8:
+            reasons.append(
+                f"Mild quality regression: BRISQUE DUT={nr_scores.brisque:.1f} vs "
+                f"REF={ref_nr_scores.brisque:.1f} (+{delta:.1f}) — "
+                "DUT slightly worse than golden reference."
+            )
+            if grade == QualityGrade.PASS:
+                grade = QualityGrade.WARNING
+        elif delta < -8:
+            reasons.append(
+                f"Quality improved vs reference: BRISQUE DUT={nr_scores.brisque:.1f} vs "
+                f"REF={ref_nr_scores.brisque:.1f} ({delta:.1f}) — "
+                "DUT is perceptually better than golden reference."
+            )
+
+    # ── LPIPS ──────────────────────────────────────────────────────────────────
+    if fr_scores and fr_scores.lpips and fr_scores.lpips.value is not None:
+        lpips_val = fr_scores.lpips.value
+        lpips_thr = fr_scores.lpips.threshold or 0.15
+        if not fr_scores.lpips.passed:
+            reasons.append(
+                f"LPIPS {lpips_val:.4f} > {lpips_thr:.4f} — "
+                "significant perceptual difference from reference "
+                "(detail / texture / structure loss)."
+            )
+            grade = QualityGrade.FAIL
+        elif lpips_val > lpips_thr * 0.75:
+            reasons.append(
+                f"LPIPS {lpips_val:.4f} approaching threshold {lpips_thr:.4f} — "
+                "noticeable perceptual difference from reference."
+            )
+            if grade == QualityGrade.PASS:
+                grade = QualityGrade.WARNING
+
+    # ── DISTS ──────────────────────────────────────────────────────────────────
+    if fr_scores and fr_scores.dists and fr_scores.dists.value is not None:
+        dists_val = fr_scores.dists.value
+        dists_thr = fr_scores.dists.threshold or 0.15
+        if not fr_scores.dists.passed:
+            reasons.append(
+                f"DISTS {dists_val:.4f} > {dists_thr:.4f} — "
+                "texture/structure regression vs reference."
+            )
+            if grade != QualityGrade.FAIL:
+                grade = QualityGrade.WARNING
+        elif dists_val > dists_thr * 0.75:
+            reasons.append(
+                f"DISTS {dists_val:.4f} approaching threshold {dists_thr:.4f} — "
+                "mild structural difference from reference."
+            )
+
+    return grade, reasons
+
+
 class ComparisonPipeline:
     def __init__(self) -> None:
         self._settings = get_settings()
         self._mode_detector = CameraModeDetector()
+        self._func_checker = FunctionalityChecker()
         self._detector = MediaTypeDetector()
         self._cropper = PreviewCropper()
         self._qm_extractor = QualityMetricsExtractor()
@@ -69,11 +171,27 @@ class ComparisonPipeline:
         sync_mode: SyncMode = SyncMode.AUTO,
         crop_preview: bool = True,
         force_media_type: Optional[str] = None,
+        analysis_mode: Optional[str] = None,
     ) -> ComparisonReport:
+        """Run the full analysis pipeline.
+
+        Parameters
+        ----------
+        analysis_mode
+            ``'functional'`` — fast path: functional checks + basic metrics only
+            (no neural IQA).  ``'quality'`` — full path (default).  If ``None``,
+            the value from the active settings (QIMC_ANALYSIS_MODE) is used.
+        """
         t_start = time.monotonic()
         report_id = uuid.uuid4().hex[:12]
-        log.info("Pipeline START report_id=%s dut=%s ref=%s", report_id, dut_path.name,
-                 reference_path.name if reference_path else "none")
+        effective_mode = (analysis_mode or "").strip().lower() or get_settings().analysis_mode
+        if effective_mode not in ("functional", "quality"):
+            effective_mode = "quality"
+        log.info(
+            "Pipeline START report_id=%s mode=%s dut=%s ref=%s",
+            report_id, effective_mode, dut_path.name,
+            reference_path.name if reference_path else "none",
+        )
 
         # ── 1. Detect media type ───────────────────────────────────────────────
         media_info = self._detector.detect(dut_path)
@@ -144,16 +262,40 @@ class ComparisonPipeline:
             artifacts = None
             diff_heatmap: Optional[np.ndarray] = None
             video_result = None
+            func_grade = None
+            func_reasons: list[str] = []
 
             if is_image and dut_img is not None:
+                # ── Functional validity check (always fast, always runs) ────────
+                func_grade, func_reasons = self._func_checker.check(
+                    dut_img, ref_img,
+                    camera_mode=dut_metadata.camera_mode.value,
+                )
+
                 quality_metrics = self._qm_extractor.extract(dut_img)
-                nr_scores = self._nr_analyzer.analyze(dut_img)
                 artifacts = self._artifact_detector.detect(dut_img)
 
-                if ref_img is not None:
-                    # Extract quality metrics from reference for side-by-side comparison
-                    ref_quality_metrics = self._qm_extractor.extract(ref_img)
-                    fr_scores, diff_heatmap = self._fr_comparator.compare(ref_img, dut_img)
+                if effective_mode == "quality":
+                    # Full IQA — NR metrics + FR metrics
+                    nr_scores = self._nr_analyzer.analyze(dut_img)
+                    if ref_img is not None:
+                        ref_quality_metrics = self._qm_extractor.extract(ref_img)
+                        fr_scores, diff_heatmap = self._fr_comparator.compare(ref_img, dut_img)
+                else:
+                    # Functional mode — BRISQUE+NIQE on DUT, LPIPS+DISTS vs reference.
+                    # These feed into functional_grade / functional_reasons via the
+                    # _merge_functional_metric_grades() helper below.
+                    nr_scores = self._nr_analyzer.analyze_classical(dut_img)
+                    _ref_nr: Optional[NoReferenceScores] = None
+                    if ref_img is not None:
+                        ref_quality_metrics = self._qm_extractor.extract(ref_img)
+                        _ref_nr = self._nr_analyzer.analyze_classical(ref_img)
+                        fr_scores, diff_heatmap = self._fr_comparator.compare(
+                            ref_img, dut_img, metrics=["lpips", "dists"]
+                        )
+                    func_grade, func_reasons = _merge_functional_metric_grades(
+                        func_grade, func_reasons, nr_scores, _ref_nr, fr_scores
+                    )
 
             # ── 4b. Video analysis ─────────────────────────────────────────────
             elif not is_image:
@@ -180,8 +322,17 @@ class ComparisonPipeline:
                 )
                 quality_metrics = video_result.quality_metrics
                 artifacts = video_result.artifacts
+                # Derive functional grade from video temporal results
+                from ..models.enums import QualityGrade as _QG
+                vt = video_result.temporal
+                if vt.black_frame_count > 0 or vt.frozen_frame_count > 0:
+                    func_grade = _QG.FAIL
+                    func_reasons = vt.failure_reasons()[-2:]  # last two = black/frozen entries
+                else:
+                    func_grade = _QG.PASS
 
             # ── 5. Build report ────────────────────────────────────────────────
+            from ..models.enums import QualityGrade as _QG
             from ..models.metrics import NoReferenceScores, QualityComparison
             from ..models.artifacts import ArtifactReport
 
@@ -194,8 +345,14 @@ class ComparisonPipeline:
             if ref_metadata is not None:
                 _metadata_comparison = MetadataComparison.build(dut_metadata, ref_metadata)
 
+            # func_grade / func_reasons initialised in image branch above;
+            # for video they are set after video analysis.
+            _func_grade = func_grade if func_grade is not None else _QG.PASS
+            _func_reasons = func_reasons or []
+
             report = ComparisonReport(
                 report_id=report_id,
+                analysis_mode=effective_mode,
                 media_type=media_type,
                 dut_file=str(dut_path),
                 reference_file=str(reference_path) if reference_path else None,
@@ -205,6 +362,8 @@ class ComparisonPipeline:
                 dut_metadata=dut_metadata,
                 ref_metadata=ref_metadata,
                 metadata_comparison=_metadata_comparison,
+                functional_grade=_func_grade,
+                functional_reasons=_func_reasons,
                 quality_metrics=_qm,
                 ref_quality_metrics=ref_quality_metrics,
                 quality_comparison=_quality_comparison,

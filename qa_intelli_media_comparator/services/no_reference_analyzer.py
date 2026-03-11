@@ -78,6 +78,18 @@ class NoReferenceAnalyzer:
         if self._settings.use_neural_nr:
             _cache.get(self._settings.neural_nr_metric, self._device)
 
+    def analyze_classical(self, img_bgr: np.ndarray) -> NoReferenceScores:
+        """Run only BRISQUE + NIQE (classical, CPU-friendly).
+
+        Used by functional mode — always runs these two regardless of the
+        ``QIMC_NR_METRICS`` setting and without loading any neural models.
+        """
+        scores = NoReferenceScores()
+        scores.brisque = self._run_metric("brisque", img_bgr)
+        scores.niqe = self._run_metric("niqe", img_bgr)
+        scores.grade = self._grade(scores)
+        return scores
+
     def analyze(self, img_bgr: np.ndarray) -> NoReferenceScores:
         scores = NoReferenceScores()
 

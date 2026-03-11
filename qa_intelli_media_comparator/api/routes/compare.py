@@ -29,6 +29,7 @@ async def _save_upload(upload: UploadFile, suffix: str) -> Path:
 
 
 _VALID_PROFILES = {"low", "medium", "high", "critical"}
+_VALID_MODES    = {"functional", "quality"}
 
 
 @router.post("/compare", tags=["comparison"], response_model=ComparisonReport)
@@ -43,6 +44,14 @@ async def compare(
         description="Per-request quality profile override: low | medium | high | critical. "
                     "Overrides server-side QIMC_QUALITY_PROFILE for this request only.",
     ),
+    analysis_mode: Optional[str] = Form(
+        None,
+        description=(
+            "Analysis depth: 'functional' (fast, ~50ms — functional checks + basic metrics, "
+            "no neural IQA) or 'quality' (full IQA pipeline, default). "
+            "Overrides QIMC_ANALYSIS_MODE for this request."
+        ),
+    ),
 ) -> JSONResponse:
     """
     Compare a DUT media file against an optional golden reference.
@@ -50,12 +59,22 @@ async def compare(
     Supports images (JPEG, PNG, HEIC, WEBP) and videos (MP4, MOV, AVI, MKV).
     Auto-detects image vs video and preview vs captured.
 
+    **Analysis modes** (per-request):
+    - `functional` — fast path (~50ms): is the camera working? black/frozen frame?
+      correct scene? Basic quality metrics only, no neural IQA.
+    - `quality` — full path: all IQA metrics + functional checks (default).
+
     **Quality profiles** (per-request, overrides server default):
     - `low` — unstable rig / outdoor / handheld
     - `medium` — semi-stable indoor / lightbox
     - `high` — stable lightbox + tripod (default)
     - `critical` — robotic / pixel-aligned rig
     """
+    if analysis_mode and analysis_mode.strip().lower() not in _VALID_MODES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid analysis_mode '{analysis_mode}'. Must be: functional | quality",
+        )
     dut_suffix = Path(dut.filename or "file").suffix or ".tmp"
     dut_path = await _save_upload(dut, dut_suffix)
     ref_path: Optional[Path] = None
@@ -92,6 +111,7 @@ async def compare(
                 sync_mode=sync,
                 crop_preview=crop_preview,
                 force_media_type=force_media_type,
+                analysis_mode=analysis_mode,
             )
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}") from exc

@@ -63,15 +63,26 @@ class ReferenceComparator:
                 _fr_cache.get(name, self._device)
 
     def compare(
-        self, ref_bgr: np.ndarray, dut_bgr: np.ndarray
+        self,
+        ref_bgr: np.ndarray,
+        dut_bgr: np.ndarray,
+        metrics: Optional[list[str]] = None,
     ) -> tuple[FullReferenceScores, Optional[np.ndarray]]:
-        """
-        Compare reference and DUT images.
-        Returns (FullReferenceScores, diff_heatmap_bgr).
+        """Compare reference and DUT images.
+
+        Parameters
+        ----------
+        metrics
+            Explicit list of metric names to compute (e.g. ``["lpips", "dists"]``).
+            When ``None`` (default) the configured ``QIMC_FR_METRICS`` list is used.
+
+        Returns
+        -------
+        (FullReferenceScores, diff_heatmap_bgr)
         """
         ref_aligned, dut_resized = self._align_and_resize(ref_bgr, dut_bgr)
         fr = FullReferenceScores()
-        metrics = self._settings.fr_metrics_list
+        metrics = metrics if metrics is not None else self._settings.fr_metrics_list
 
         # ── PSNR ──────────────────────────────────────────────────────────────
         if "psnr" in metrics:

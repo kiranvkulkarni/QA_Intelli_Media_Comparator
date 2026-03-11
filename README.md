@@ -12,6 +12,7 @@
 4. [Requirements](#requirements)
 5. [Installation](#installation)
 6. [Configuration](#configuration)
+   - [Functional vs Quality Analysis Modes](#functional-vs-quality-analysis-modes)
 7. [Running the Service](#running-the-service)
 8. [API Reference](#api-reference)
 9. [CLI Usage](#cli-usage)
@@ -80,6 +81,7 @@ The service accepts media from the **Golden Reference model** and the **Device U
 | **CLI** | `qimc analyze` and `qimc compare` for offline use without server |
 | **Report storage** | SQLite index + JSON files + PNG images, queryable via REST |
 | **GPU optional** | CUDA auto-detected; full functionality without GPU |
+| **Two-mode analysis** | `functional` mode (BRISQUE/NIQE + LPIPS/DISTS + go/no-go checks, ~200–500 ms) for automation loops with perceptual regression detection; `quality` mode (full pipeline, default) for release validation |
 
 ---
 
@@ -309,11 +311,162 @@ All metadata observations appear in `failure_reasons` prefixed with `[Mode]` or 
 
 ---
 
+### Functional vs Quality Analysis Modes
+
+The service supports two analysis depths, selectable per-request or as a server-wide default via `.env`:
+
+| Mode | Speed | What runs | Best for |
+|---|---|---|---|
+| `functional` | **~200–500 ms** | `FunctionalityChecker` + `QualityMetricsExtractor` + `ArtifactDetector` + **BRISQUE/NIQE** (DUT & REF) + **LPIPS/DISTS** vs reference | Automation loops — robust go/no-go verdict including perceptual regression detection |
+| `quality` | ~1–4 s | Everything above + full `NoReferenceAnalyzer` (MUSIQ/CLIP-IQA optional) + full `ReferenceComparator` (PSNR/SSIM/MS-SSIM/LPIPS/DISTS) | Release validation, full NR-IQA trending, perceptual quality deep-dives |
+
+#### What `functional` mode checks
+
+Functional mode runs in two layers:
+
+**Layer 1 — Go/No-Go checks** (`FunctionalityChecker`, classical OpenCV, ~5 ms):
+
+| Check | Failure condition | Grade |
+|---|---|---|
+| **Black frame** | Mean luma < 8 (4 in Night mode) | FAIL — camera not outputting image |
+| **Blown/white frame** | Mean luma > 248 AND std < 15 | FAIL — sensor saturated |
+| **Uniform frame** | Pixel std < 3 across entire image | FAIL — camera frozen or lens cap on |
+| **Edge density** | Canny edge ratio < 1 % of frame | WARNING — no scene content detected |
+| **Absolute blur floor** | Laplacian variance < 1.0 | WARNING — extreme defocus |
+| **Scene mismatch** | Colour histogram correlation < 0.30 vs reference | FAIL — wrong scene captured; < 0.60 → WARNING |
+
+**Layer 2 — Perceptual regression checks** (BRISQUE + LPIPS + DISTS, ~200–500 ms):
+
+| Check | Failure condition | Grade |
+|---|---|---|
+| **BRISQUE absolute floor** (DUT) | Score > 70 | FAIL — poor perceptual quality (distortion/blur/noise) |
+| **BRISQUE absolute floor** (DUT) | Score > 50 | WARNING — moderate quality degradation |
+| **BRISQUE delta vs reference** | DUT − REF > 15 | FAIL — DUT significantly degraded vs golden reference |
+| **BRISQUE delta vs reference** | DUT − REF > 8 | WARNING — DUT mildly worse than golden reference |
+| **BRISQUE delta vs reference** | DUT − REF < −8 | INFO — DUT is perceptually **better** than golden reference |
+| **LPIPS** (DUT vs REF) | Score > `QIMC_LPIPS_THRESHOLD` | FAIL — significant perceptual difference (detail/texture loss) |
+| **LPIPS** (DUT vs REF) | Score > 75 % of threshold | WARNING — noticeable perceptual difference |
+| **DISTS** (DUT vs REF) | Score > `QIMC_DISTS_THRESHOLD` | WARNING — texture/structure regression vs reference |
+| **DISTS** (DUT vs REF) | Score > 75 % of threshold | INFO — mild structural difference |
+
+Layer 2 runs only when a reference image is provided (BRISQUE delta, LPIPS, DISTS require a reference for comparison). BRISQUE absolute floor runs on DUT alone regardless.
+
+The `functional_grade` is the worst grade across both layers and is reported in `functional_reasons` with human-readable explanations. A Night photo can be `overall_grade=warning` (elevated noise in quality mode) but `functional_grade=pass` if all checks pass.
+
+**What is still skipped in functional mode** (vs quality mode):
+- MUSIQ / CLIP-IQA (neural NR — requires GPU, slower)
+- PSNR / SSIM / MS-SSIM (pixel-level FR metrics)
+- `overall_grade` remains `null`
+
+#### Selecting analysis mode
+
+**Per-request** (API):
+
+```http
+POST /compare
+Content-Type: multipart/form-data
+
+dut=<file>
+reference=<file>
+analysis_mode=functional
+```
+
+**Per-request** (CLI):
+
+```bash
+qimc analyze /path/to/photo.jpg --mode functional
+qimc compare /path/to/dut.jpg /path/to/ref.jpg --mode functional
+```
+
+**Server-wide default** (`.env`):
+
+```env
+QIMC_ANALYSIS_MODE=functional   # fast-path for all requests by default
+```
+
+#### Report output in functional mode
+
+```json
+{
+  "analysis_mode": "functional",
+  "functional_grade": "fail",
+  "functional_reasons": [
+    "BRISQUE 73.2 > 70 — poor perceptual quality (likely affected by distortion, blur, or noise).",
+    "Quality regression: BRISQUE DUT=73.2 vs REF=28.4 (+44.8) — DUT quality significantly degraded vs golden reference.",
+    "LPIPS 0.2341 > 0.1500 — significant perceptual difference from reference (detail / texture / structure loss)."
+  ],
+  "overall_grade": null,
+  "nr_scores": {
+    "brisque": 73.2,
+    "niqe": 7.1,
+    "musiq": null,
+    "clip_iqa": null,
+    "grade": "fail"
+  },
+  "fr_scores": {
+    "psnr": null,
+    "ssim": null,
+    "ms_ssim": null,
+    "lpips": { "value": 0.2341, "threshold": 0.15, "passed": false },
+    "dists": { "value": 0.1820, "threshold": 0.15, "passed": false }
+  },
+  "processing_time_ms": 412
+}
+```
+
+A passing example without reference:
+
+```json
+{
+  "analysis_mode": "functional",
+  "functional_grade": "pass",
+  "functional_reasons": [],
+  "overall_grade": null,
+  "nr_scores": {
+    "brisque": 22.5,
+    "niqe": 3.8,
+    "grade": "pass"
+  },
+  "fr_scores": null,
+  "processing_time_ms": 95
+}
+```
+
+In `quality` mode both grades are present:
+
+```json
+{
+  "analysis_mode": "quality",
+  "functional_grade": "pass",
+  "functional_reasons": [],
+  "overall_grade": "pass",
+  "failure_reasons": [],
+  "processing_time_ms": 1540
+}
+```
+
+#### Recommended automation pattern
+
+```
+for each test step:
+    1. Trigger camera action via UIAutomator2
+    2. POST /compare  analysis_mode=functional  → ~200–500 ms
+       - functional_grade == "fail"    → mark step FAILED (camera broken or quality regressed)
+       - functional_grade == "warning" → mark step WARNING (mild degradation, investigate)
+       - functional_reasons lists BRISQUE delta / LPIPS / DISTS failure details
+    3. [optional, post-run] reprocess with analysis_mode=quality for full SSIM/PSNR/MUSIQ diagnostics
+```
+
+This pattern requires no GPU for basic operation (BRISQUE/NIQE are CPU-based; LPIPS/DISTS use GPU if available, CPU otherwise) and catches both hard failures (black frame, frozen camera) and perceptual regressions (blur, noise, texture loss) in a single pass.
+
+---
+
 ### Full Configuration Reference
 
 | Variable | Default | Description |
 |---|---|---|
 | `QIMC_QUALITY_PROFILE` | _(empty)_ | Preset profile: `low` \| `medium` \| `high` \| `critical`. Overrides all thresholds below when set. |
+| `QIMC_ANALYSIS_MODE` | `quality` | Default analysis depth for all requests. `functional` — robust fast path: go/no-go checks + BRISQUE/NIQE + LPIPS/DISTS + artifact detection; no MUSIQ/CLIP-IQA/PSNR/SSIM. `quality` — full pipeline (current default). Can be overridden per-request via `analysis_mode` form field. |
 | `QIMC_DEVICE` | `auto` | Compute device: `auto` \| `cuda` \| `cpu`. `auto` detects CUDA at runtime. |
 | `QIMC_NR_METRICS` | `brisque,niqe` | Comma-separated list of no-reference metrics to compute (always CPU-compatible). |
 | `QIMC_USE_NEURAL_NR` | `false` | Enable neural NR metrics (MUSIQ or CLIP-IQA). GPU strongly recommended. |
@@ -400,6 +553,7 @@ Compare a DUT media file against an optional golden reference.
 | `crop_preview` | bool | No | Auto-crop camera UI chrome (default: `true`) |
 | `force_media_type` | string | No | Override auto-detection: `image_captured`, `image_preview`, `video_static`, `video_motion` |
 | `quality_profile` | string | No | Per-request profile override: `low` \| `medium` \| `high` \| `critical`. Overrides server default for this request only. |
+| `analysis_mode` | string | No | Analysis depth: `functional` (fast path, < 100 ms, no neural IQA) or `quality` (full pipeline, default). Overrides `QIMC_ANALYSIS_MODE` for this request only. |
 
 **Response** — `200 OK`
 
@@ -444,8 +598,18 @@ Compare a DUT media file against an optional golden reference.
     "overall_severity": "none"
   },
   "video_temporal": null,
+  "analysis_mode": "quality",
+  "functional_grade": "pass",
+  "functional_reasons": [],
   "overall_grade": "pass",
   "failure_reasons": [],
+  "dut_metadata": {
+    "make": "Samsung", "model": "SM-S926B",
+    "iso": 50, "f_number": 1.8, "exposure_time": "1/2500",
+    "camera_mode": "auto", "camera_mode_confidence": 0.5, "camera_mode_source": "default"
+  },
+  "ref_metadata": null,
+  "metadata_comparison": null,
   "annotated_image_path": "./data/reports/a3f9c1b2d4e5_annotated.png",
   "diff_image_path": "./data/reports/a3f9c1b2d4e5_diff.png",
   "processing_time_ms": 1240
@@ -473,6 +637,7 @@ No-reference quality analysis of a single media file.
 | `media` | file | Yes | Image or video to analyze |
 | `crop_preview` | bool | No | Auto-crop camera UI chrome (default: `true`) |
 | `quality_profile` | string | No | Per-request profile override: `low` \| `medium` \| `high` \| `critical`. |
+| `analysis_mode` | string | No | Analysis depth: `functional` or `quality` (default). |
 
 **Response** — Same `ComparisonReport` schema as `/compare` (with `fr_scores: null`).
 
@@ -554,6 +719,9 @@ The `qimc` CLI provides offline access to all analysis capabilities without runn
 ```bash
 qimc analyze /path/to/photo.jpg
 qimc analyze /path/to/screen_recording.mp4 --no-crop
+
+# Functional-only fast check (no neural IQA, < 100 ms)
+qimc analyze /path/to/photo.jpg --mode functional
 ```
 
 ### Reference comparison
@@ -561,6 +729,12 @@ qimc analyze /path/to/screen_recording.mp4 --no-crop
 ```bash
 qimc compare /path/to/dut.jpg /path/to/golden_ref.jpg
 qimc compare /path/to/dut_video.mp4 /path/to/ref_video.mp4 --sync frame_by_frame
+
+# Functional mode — fast go/no-go for automation loops
+qimc compare /path/to/dut.jpg /path/to/golden_ref.jpg --mode functional
+
+# Full quality analysis (default)
+qimc compare /path/to/dut.jpg /path/to/golden_ref.jpg --mode quality
 ```
 
 ### Start the server
@@ -573,10 +747,11 @@ qimc serve --port 9090 --log-level debug --reload
 ### Example CLI output
 
 ```
-╔══════════════════════════════════╗
-║  Report a3f9c1b2d4e5            ║
-║         PASS                    ║
-╚══════════════════════════════════╝
+╔═════════════════════════════════════════════╗
+║  Report a3f9c1b2d4e5  [quality mode]        ║
+║  FUNCTIONAL: PASS                           ║
+║  QUALITY:    PASS                           ║
+╚═════════════════════════════════════════════╝
 
 ┌─────────────────────────────────┬──────────────┐
 │ Metric                          │ Value        │
@@ -887,6 +1062,29 @@ def compare_camera_output(dut_path: str, ref_path: str) -> dict:
     return response.json()
 
 
+def fast_functional_check(dut_path: str, ref_path: str) -> dict:
+    """Functional-mode comparison: ~200–500 ms with perceptual regression detection.
+
+    Runs: go/no-go checks + BRISQUE/NIQE (DUT & REF) + LPIPS/DISTS vs reference
+    + artifact detection.  No MUSIQ/CLIP-IQA/PSNR/SSIM.
+
+    Returns functional_grade (pass/warning/fail), functional_reasons (list of
+    human-readable failure strings), nr_scores (BRISQUE/NIQE), and fr_scores
+    (LPIPS/DISTS).  overall_grade is null in this mode.
+    """
+    with open(dut_path, "rb") as dut, open(ref_path, "rb") as ref:
+        response = requests.post(
+            f"{QIMC_URL}/compare",
+            files={
+                "dut": (Path(dut_path).name, dut, "image/jpeg"),
+                "reference": (Path(ref_path).name, ref, "image/jpeg"),
+            },
+            data={"analysis_mode": "functional", "crop_preview": "false"},
+        )
+    response.raise_for_status()
+    return response.json()
+
+
 def analyze_preview_recording(recording_path: str) -> dict:
     """Analyze an ADB screen recording of the camera preview."""
     with open(recording_path, "rb") as f:
@@ -914,6 +1112,21 @@ def test_camera_zoom_quality():
         ref_path="./captures/ref_2x_zoom.jpg",
     )
 
+    # Step 1: fast functional check (< 100 ms) — is camera working at all?
+    report = fast_functional_check(
+        dut_path="./captures/dut_2x_zoom.jpg",
+        ref_path="./captures/ref_2x_zoom.jpg",
+    )
+    assert report["functional_grade"] == "pass", (
+        f"Camera 2x zoom FUNCTIONAL FAIL:\n" +
+        "\n".join(f"  - {r}" for r in report["functional_reasons"])
+    )
+
+    # Step 2 (optional): full quality analysis for release gate
+    report = compare_camera_output(
+        dut_path="./captures/dut_2x_zoom.jpg",
+        ref_path="./captures/ref_2x_zoom.jpg",
+    )
     assert report["overall_grade"] == "pass", (
         f"Camera 2x zoom quality FAIL:\n" +
         "\n".join(f"  - {r}" for r in report["failure_reasons"])
@@ -1007,15 +1220,16 @@ QA_Intelli_Media_Comparator/
 │   │
 │   ├── services/
 │   │   ├── camera_mode_detector.py         ← EXIF extraction, camera mode inference, threshold adjustment
+│   │   ├── functionality_checker.py        ← Layer-1 go/no-go checks (black/white/uniform frame, scene mismatch); Layer-2 grades folded in pipeline via BRISQUE delta + LPIPS + DISTS
 │   │   ├── media_type_detector.py          ← Auto-detect media type
 │   │   ├── preview_cropper.py              ← Crop camera UI chrome
 │   │   ├── quality_metrics.py              ← Standard photographic metrics
 │   │   ├── artifact_detector.py            ← 8-type artifact detection
 │   │   ├── no_reference_analyzer.py        ← NR-IQA via pyiqa
 │   │   ├── reference_comparator.py         ← FR-IQA with spatial alignment
-│   │   ├── video_analyzer.py               ← Temporal video quality
+│   │   ├── video_analyzer.py               ← Temporal video quality (incl. freeze/black frame detection)
 │   │   ├── annotation_renderer.py          ← Annotated image output
-│   │   └── pipeline.py                     ← Full orchestration
+│   │   └── pipeline.py                     ← Full orchestration (analysis_mode branching)
 │   │
 │   └── storage/
 │       ├── report_store.py                 ← SQLite + JSON persistence

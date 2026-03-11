@@ -16,6 +16,9 @@ router = APIRouter()
 _VALID_PROFILES = {"low", "medium", "high", "critical"}
 
 
+_VALID_MODES = {"functional", "quality"}
+
+
 @router.post("/analyze", tags=["comparison"], response_model=ComparisonReport)
 async def analyze(
     media: UploadFile = File(..., description="Single media file for no-reference analysis"),
@@ -25,10 +28,23 @@ async def analyze(
         description="Per-request quality profile override: low | medium | high | critical. "
                     "Overrides server-side QIMC_QUALITY_PROFILE for this request only.",
     ),
+    analysis_mode: Optional[str] = Form(
+        None,
+        description=(
+            "Analysis depth: 'functional' (fast, ~50ms — functional checks + basic metrics, "
+            "no neural IQA) or 'quality' (full IQA pipeline, default). "
+            "Overrides QIMC_ANALYSIS_MODE for this request."
+        ),
+    ),
 ) -> JSONResponse:
     """
     No-reference quality analysis of a single media file.
     Does not require a golden reference — useful for absolute quality assessment.
+
+    **Analysis modes** (per-request):
+    - `functional` — fast path (~50ms): is the camera working? black frame?
+      frozen preview? correct scene? No neural IQA.
+    - `quality` — full path: all IQA metrics + functional checks (default).
 
     **Quality profiles** (per-request, overrides server default):
     - `low` — unstable rig / outdoor / handheld
@@ -36,6 +52,12 @@ async def analyze(
     - `high` — stable lightbox + tripod (default)
     - `critical` — robotic / pixel-aligned rig
     """
+    if analysis_mode and analysis_mode.strip().lower() not in _VALID_MODES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid analysis_mode '{analysis_mode}'. Must be: functional | quality",
+        )
+
     suffix = Path(media.filename or "file").suffix or ".tmp"
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     media_path = Path(tmp.name)
@@ -66,6 +88,7 @@ async def analyze(
                 dut_path=media_path,
                 reference_path=None,
                 crop_preview=crop_preview,
+                analysis_mode=analysis_mode,
             )
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}") from exc

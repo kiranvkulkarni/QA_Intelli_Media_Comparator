@@ -43,6 +43,13 @@ def serve(
 def analyze(
     media: str = typer.Argument(..., help="Path to media file"),
     crop: bool = typer.Option(True, help="Auto-crop preview UI"),
+    mode: str = typer.Option(
+        "quality",
+        help=(
+            "Analysis depth: 'functional' (fast, ~50ms — is the camera working? "
+            "no neural IQA) or 'quality' (full IQA pipeline, default)."
+        ),
+    ),
 ) -> None:
     """Run no-reference analysis on a single media file (no server needed)."""
     from pathlib import Path
@@ -54,10 +61,11 @@ def analyze(
         console.print(f"[red]File not found: {path}[/red]")
         raise typer.Exit(1)
 
-    console.print(f"[cyan]Analyzing:[/cyan] {path}")
+    console.print(f"[cyan]Analyzing ({mode} mode):[/cyan] {path}")
     pipeline = ComparisonPipeline()
-    pipeline.preload_models()
-    report = pipeline.run(dut_path=path, crop_preview=crop)
+    if mode == "quality":
+        pipeline.preload_models()
+    report = pipeline.run(dut_path=path, crop_preview=crop, analysis_mode=mode)
 
     _print_report(report)
 
@@ -68,6 +76,13 @@ def compare(
     reference: str = typer.Argument(..., help="Golden reference media file"),
     crop: bool = typer.Option(True, help="Auto-crop preview UI"),
     sync: str = typer.Option("auto", help="Video sync mode: auto|frame_by_frame"),
+    mode: str = typer.Option(
+        "quality",
+        help=(
+            "Analysis depth: 'functional' (fast, ~50ms — is the camera working? "
+            "no neural IQA) or 'quality' (full IQA pipeline, default)."
+        ),
+    ),
 ) -> None:
     """Compare DUT against golden reference (no server needed)."""
     from pathlib import Path
@@ -81,14 +96,16 @@ def compare(
             console.print(f"[red]File not found: {p}[/red]")
             raise typer.Exit(1)
 
-    console.print(f"[cyan]Comparing:[/cyan] {dut_path.name} vs {ref_path.name}")
+    console.print(f"[cyan]Comparing ({mode} mode):[/cyan] {dut_path.name} vs {ref_path.name}")
     pipeline = ComparisonPipeline()
-    pipeline.preload_models()
+    if mode == "quality":
+        pipeline.preload_models()
     report = pipeline.run(
         dut_path=dut_path,
         reference_path=ref_path,
         sync_mode=SyncMode(sync),
         crop_preview=crop,
+        analysis_mode=mode,
     )
     _print_report(report)
 
@@ -97,18 +114,27 @@ def _print_report(report) -> None:
     from rich.table import Table
     from rich.panel import Panel
 
-    grade_color = {"pass": "green", "warning": "yellow", "fail": "red"}.get(
-        report.overall_grade.value, "white"
-    )
+    _gc = {"pass": "green", "warning": "yellow", "fail": "red"}
+    grade_color    = _gc.get(report.overall_grade.value, "white")
+    func_color     = _gc.get(report.functional_grade.value, "white")
+    mode_label     = f"  [{report.analysis_mode} mode]"
+
     console.print(
         Panel(
-            f"[bold {grade_color}]{report.overall_grade.value.upper()}[/bold {grade_color}]",
-            title=f"Report {report.report_id}",
+            f"[bold {func_color}]FUNCTIONAL: {report.functional_grade.value.upper()}[/bold {func_color}]"
+            + (f"\n[bold {grade_color}]QUALITY:    {report.overall_grade.value.upper()}[/bold {grade_color}]"
+               if report.analysis_mode == "quality" else ""),
+            title=f"Report {report.report_id}{mode_label}",
         )
     )
 
+    if report.functional_reasons:
+        console.print("[bold red]Functional issues:[/bold red]")
+        for reason in report.functional_reasons:
+            console.print(f"  [red]•[/red] {reason}")
+
     if report.failure_reasons:
-        console.print("[bold red]Failure reasons:[/bold red]")
+        console.print("[bold red]Quality failure reasons:[/bold red]")
         for reason in report.failure_reasons:
             console.print(f"  [red]•[/red] {reason}")
 

@@ -23,6 +23,7 @@
    - 4.7 [VideoAnalyzer](#47-videoanalyzer)
    - 4.8 [AnnotationRenderer](#48-annotationrenderer)
    - 4.9 [ComparisonPipeline](#49-comparisonpipeline)
+   - 4.10 [FunctionalityChecker](#410-functionalitychecker)
 5. [API Layer](#5-api-layer)
 6. [Storage Layer](#6-storage-layer)
 7. [Configuration System](#7-configuration-system)
@@ -178,8 +179,13 @@ ComparisonReport
 │   ├── jitter_score: float
 │   ├── temporal_ssim_mean: float
 │   ├── temporal_ssim_std: float
-│   └── sync_offset_frames: int
-├── overall_grade: QualityGrade
+│   ├── sync_offset_frames: int
+│   ├── black_frame_count: int      ← frames with near-zero luminance
+│   └── frozen_frame_count: int     ← frames in a consecutive freeze run
+├── analysis_mode: str              ← "functional" | "quality"
+├── functional_grade: QualityGrade  ← PASS/WARNING/FAIL from FunctionalityChecker only
+├── functional_reasons: List[str]   ← human-readable strings for functional failures
+├── overall_grade: QualityGrade     ← full IQA grade (null in functional mode)
 ├── failure_reasons: List[str]
 ├── annotated_image_path: str
 └── processing_time_ms: int
@@ -926,13 +932,15 @@ Step 5: hstack([annotated_img, panel])
 #### Full Execution Flow
 
 ```
-run(dut_path, reference_path=None, sync_mode=AUTO, crop_preview=True)
+run(dut_path, reference_path=None, sync_mode=AUTO, crop_preview=True, analysis_mode=None)
+│
+│  analysis_mode = request param ?? QIMC_ANALYSIS_MODE ?? "quality"
 │
 ├── 1. MediaTypeDetector.detect(dut_path)
 │       → MediaInfo (media_type, w, h, fps, ...)
 │
-├── 1b. CameraModeDetector.detect(dut_path)  ← NEW
-│       CameraModeDetector.detect(ref_path)  ← NEW (if reference provided)
+├── 1b. CameraModeDetector.detect(dut_path)
+│       CameraModeDetector.detect(ref_path)  (if reference provided)
 │       → MediaMetadata (EXIF + camera_mode enum)
 │
 │       CameraModeDetector.apply_mode_adjustments(camera_mode, get_settings())
@@ -945,11 +953,17 @@ run(dut_path, reference_path=None, sync_mode=AUTO, crop_preview=True)
 │       PreviewCropper.crop_image(ref_img)   → (cropped_ref, CropResult)
 │
 ├── 3a. [if IMAGE]
+│       ── always run (both modes) ──────────────────────────────────────
+│       FunctionalityChecker.check(dut_img, ref_img, camera_mode)
+│           → functional_grade, functional_reasons
 │       QualityMetricsExtractor.extract(dut_img) → QualityMetrics
-│       NoReferenceAnalyzer.analyze(dut_img)     → NoReferenceScores
 │       ArtifactDetector.detect(dut_img)          → ArtifactReport
-│       [if reference]
-│           ReferenceComparator.compare(ref, dut)  → (FullReferenceScores, diff_heatmap)
+│       ── quality mode only ────────────────────────────────────────────
+│       [if analysis_mode == "quality"]
+│           NoReferenceAnalyzer.analyze(dut_img)     → NoReferenceScores
+│           [if reference]
+│               ReferenceComparator.compare(ref, dut)
+│                   → (FullReferenceScores, diff_heatmap)
 │
 ├── 3b. [if VIDEO]
 │       [if crop_preview]
@@ -958,14 +972,21 @@ run(dut_path, reference_path=None, sync_mode=AUTO, crop_preview=True)
 │       VideoAnalyzer.analyze(dut, ref, sync_mode, bbox, ref_bbox)
 │           → VideoAnalysisResult
 │               (quality_metrics, artifacts, temporal)
+│       FunctionalityChecker.check_video_sequence(frames)
+│           → black_frame_count, frozen_frame_count
+│           → stored in VideoTemporalMetrics
 │
 ├── 4. Build ComparisonReport
-│       MetadataComparison.build(dut_meta, ref_meta)  ← NEW (compare mode)
-│       report.compute_overall_grade()
-│           → aggregates FR failures + QM failures + artifact failures + temporal failures
-│           → appends camera mode notes ([Mode] prefix)       ← NEW
-│           → appends metadata comparison notes ([Metadata])  ← NEW
-│           → populates failure_reasons list
+│       MetadataComparison.build(dut_meta, ref_meta)  (compare mode)
+│       report.analysis_mode = effective analysis_mode
+│       report.functional_grade = functional_grade
+│       report.functional_reasons = functional_reasons
+│       [if analysis_mode == "quality"]
+│           report.compute_overall_grade()
+│               → aggregates FR + QM + artifact + temporal failures
+│               → appends [Mode] camera mode notes (advisory)
+│               → appends [Metadata] comparison notes (advisory)
+│               → populates failure_reasons list
 │
 ├── 5. AnnotationRenderer.render(report, img, diff_heatmap) → annotated_bgr
 │       AnnotationRenderer.save(annotated_bgr, reports_dir/{id}_annotated.png)
@@ -1029,6 +1050,106 @@ def compute_overall_grade(self) -> QualityGrade:
 ```
 
 **Note:** Thresholds used in the quality checks above (`blur_threshold`, `noise_threshold`, `highlight_clip_threshold`, `shadow_clip_threshold`) are read from `get_settings()` at evaluation time. Because the pipeline has already pushed mode-adjusted settings into the `_request_settings` ContextVar before calling `compute_overall_grade()`, the threshold values are automatically the mode-corrected ones — no special-casing needed in the grade computation itself.
+
+---
+
+### 4.10 FunctionalityChecker
+
+**File:** `services/functionality_checker.py`
+
+#### 4.10.1 Purpose
+
+The `FunctionalityChecker` answers a single binary question at very high speed: **"Is the camera producing a valid image at all?"** It uses only classical OpenCV operations and completes in ~5 ms, making it suitable as the inner loop of a fully automated test that runs hundreds of test steps per hour.
+
+It is always executed in both `functional` and `quality` analysis modes. In `functional` mode it is the primary (and fastest) verdict. In `quality` mode its result is surfaced as `functional_grade` alongside the full IQA `overall_grade`.
+
+#### 4.10.2 Image Checks
+
+```python
+def check(img_bgr, ref_img=None, camera_mode="unknown") -> tuple[QualityGrade, list[str]]:
+```
+
+Checks are evaluated in order; the first FAIL or WARNING that applies is recorded, but all checks run so the full reason list is populated:
+
+| # | Check | Condition | Grade |
+|---|---|---|---|
+| 1 | **Black frame** | `mean(luma) < 8` (or `< 4` if Night mode) | FAIL |
+| 2 | **Blown / white frame** | `mean(luma) > 248` AND `std(luma) < 15` | FAIL |
+| 3 | **Uniform frame** | `std(all pixels) < 3` | FAIL |
+| 4 | **Edge density** | `count(Canny edges) / total_pixels < 0.010` | WARNING |
+| 5 | **Absolute blur floor** | `var(Laplacian) < 1.0` | WARNING |
+| 6 | **Scene mismatch** | `histogram_corr(dut, ref) < 0.30` | FAIL |
+| 6a | _(looser)_ | `histogram_corr(dut, ref) < 0.60` | WARNING |
+
+**Black frame threshold** is halved in Night mode to allow for intentionally dark long-exposure captures that may have very low mean luminance.
+
+**Scene mismatch** uses colour histogram correlation (OpenCV `HISTCMP_CORREL`), computed on 3-channel 32-bin normalized histograms. This is spatially invariant — robust to minor positional shifts and moderate exposure differences between DUT and REF, but sensitive to capturing a completely different scene.
+
+#### 4.10.3 Video Sequence Checks
+
+```python
+def check_video_sequence(frames: list[np.ndarray]) -> tuple[int, int]:
+    # Returns (black_frame_count, frozen_frame_count)
+```
+
+For each consecutive pair of frames:
+
+```
+abs_diff = mean(|frame_a - frame_b|) / 255
+
+if abs_diff < 0.003:
+    consecutive_frozen += 1
+    if consecutive_frozen >= 3:
+        frozen_frame_count += 1   # at least 3 pairs frozen = true freeze
+else:
+    consecutive_frozen = 0
+
+if mean(luma(frame)) < 8:
+    black_frame_count += 1
+```
+
+The results are stored in `VideoTemporalMetrics.black_frame_count` and `VideoTemporalMetrics.frozen_frame_count` and cause FAIL/WARNING in `VideoTemporalMetrics.failure_reasons()`.
+
+#### 4.10.4 Histogram Correlation Implementation
+
+```python
+@staticmethod
+def _histogram_correlation(img_a: np.ndarray, img_b: np.ndarray) -> float:
+    hists = []
+    for img in (img_a, img_b):
+        h = cv2.calcHist([img], [0, 1, 2], None, [32, 32, 32], [0,256,0,256,0,256])
+        cv2.normalize(h, h)
+        hists.append(h)
+    return cv2.compareHist(hists[0], hists[1], cv2.HISTCMP_CORREL)
+```
+
+Returns a value in `[-1, 1]` where 1.0 means identical distributions. Values below 0.60 indicate the DUT is unlikely to be showing the same scene as the reference.
+
+#### 4.10.5 Integration with analysis_mode
+
+The pipeline always calls `FunctionalityChecker.check()` for images, regardless of `analysis_mode`:
+
+```
+pipeline.run(analysis_mode="functional" | "quality")
+│
+├── FunctionalityChecker.check(dut_img, ref_img, camera_mode)
+│       → functional_grade, functional_reasons
+│
+├── [if analysis_mode == "quality"]
+│       QualityMetricsExtractor.extract(...)
+│       NoReferenceAnalyzer.analyze(...)     ← skipped in functional mode
+│       ArtifactDetector.detect(...)
+│       ReferenceComparator.compare(...)     ← skipped in functional mode
+│
+└── Build ComparisonReport with both functional_grade and overall_grade
+    [in functional mode: overall_grade is not computed, nr_scores and fr_scores are null]
+```
+
+This design keeps the fast path genuinely fast (no neural model inference) while making both grades available in `quality` mode for independent tracking.
+
+#### 4.10.6 Model Preload Behaviour
+
+In `functional` mode the CLI skips `pipeline.preload_models()` entirely — neural IQA models are never loaded, saving 2–10 seconds of startup time and 200–600 MB of RAM. This makes the CLI usable in low-memory CI environments.
 
 ---
 
@@ -1152,6 +1273,7 @@ Priority (highest to lowest):
 | Setting | Type | Default | Description |
 |---|---|---|---|
 | `quality_profile` | str | `""` | Preset: `low` \| `medium` \| `high` \| `critical`. When set, overrides all threshold fields below via `model_post_init`. |
+| `analysis_mode` | str | `"quality"` | Default analysis depth. `"functional"` — fast path (~50 ms): `FunctionalityChecker` + `QualityMetricsExtractor` + `ArtifactDetector`, no neural IQA. `"quality"` — full pipeline (default). Overridable per-request via form param. |
 | `device` | str | `"auto"` | Compute device: `"auto"` \| `"cuda"` \| `"cpu"` |
 | `nr_metrics` | str | `"brisque,niqe"` | Comma-separated NR metric names (pyiqa) |
 | `use_neural_nr` | bool | `False` | Enable GPU neural NR metrics |
@@ -1300,7 +1422,7 @@ If a model fails to load (e.g., CUDA out of memory, network unavailable), its sc
 ### 9.1 Image Comparison Flow
 
 ```
-POST /compare
+POST /compare  (analysis_mode = "functional" | "quality")
     │
     ├─ Save dut + ref to temp files
     │
@@ -1308,30 +1430,40 @@ POST /compare
 MediaTypeDetector.detect(dut)
     │ MediaType = IMAGE_CAPTURED | IMAGE_PREVIEW
     ▼
+CameraModeDetector.detect(dut) → dut_metadata (EXIF + camera_mode)
+CameraModeDetector.detect(ref) → ref_metadata
+apply_mode_adjustments() → push effective_settings into ContextVar
+    │
 [if IMAGE_PREVIEW and crop_preview]
 PreviewCropper.crop_image(dut_img)  ────────────────── CropResult
 PreviewCropper.crop_image(ref_img)  ────────────────── CropResult
     │
+    ▼  ── ALWAYS run (both modes) ──────────────────────────────────────
+FunctionalityChecker.check(dut_img, ref_img, camera_mode)
+    │   → functional_grade, functional_reasons
     ▼
 QualityMetricsExtractor.extract(dut_img)  ───────────── QualityMetrics (DUT)
     │
-NoReferenceAnalyzer.analyze(dut_img)  ──────────────── NoReferenceScores
-    │
 ArtifactDetector.detect(dut_img)  ──────────────────── ArtifactReport
     │
-[if reference provided]
-QualityMetricsExtractor.extract(ref_img)  ───────────── QualityMetrics (REF)
-    │                                                    (stored as ref_quality_metrics)
-ReferenceComparator.compare(ref_img, dut_img)
-    ├── align (SIFT + homography)
-    ├── PSNR, SSIM, MS-SSIM, LPIPS, DISTS  ─────────── FullReferenceScores
-    └── absdiff + JET colormap  ────────────────────── diff_heatmap (BGR)
+    ▼  ── quality mode only ─────────────────────────────────────────────
+[if analysis_mode == "quality"]
+    NoReferenceAnalyzer.analyze(dut_img)  ──────────── NoReferenceScores
+    │
+    [if reference provided]
+    QualityMetricsExtractor.extract(ref_img)  ──────── QualityMetrics (REF)
+    ReferenceComparator.compare(ref_img, dut_img)
+        ├── align (SIFT + homography)
+        ├── PSNR, SSIM, MS-SSIM, LPIPS, DISTS  ─────── FullReferenceScores
+        └── absdiff + JET colormap  ───────────────── diff_heatmap (BGR)
     │
     ▼
-ComparisonReport.compute_overall_grade()
-    │ Aggregates FR failures + QM absolute failures + artifact failures
-    │ + comparative regressions (DUT vs REF quality metrics)
-    │ → overall_grade + failure_reasons
+ComparisonReport built with:
+    analysis_mode, functional_grade, functional_reasons
+    [quality mode] compute_overall_grade()
+        Aggregates FR + QM + artifact failures
+        + [Mode] and [Metadata] advisory notes
+        → overall_grade + failure_reasons
     ▼
 AnnotationRenderer.render(report, dut_img, diff_heatmap)
     │ Heatmap overlay + artifact boxes + grade banner + metrics panel
@@ -1373,7 +1505,9 @@ VideoAnalyzer.analyze(dut, ref, sync_mode, bbox)
     │
     ├── Per-frame QualityMetrics (sampled)  → aggregated
     ├── ArtifactDetector.detect(worst_frame) → ArtifactReport
-    │
+    ├── FunctionalityChecker.check_video_sequence(frames)
+    │       → black_frame_count, frozen_frame_count
+    │       → stored in VideoTemporalMetrics
     └── VideoAnalysisResult
             (temporal, quality_metrics, artifacts, worst_frame_index)
     │
@@ -1454,6 +1588,11 @@ finally:
 | **Total image NR analysis** | **~1–2 s** |
 | **Total image FR comparison** | **~2–4 s** |
 | **Total video (30s, 2fps sample)** | **~5–15 s** |
+| **Functional mode (image)** | **< 100 ms** |
+| FunctionalityChecker | 5–15 ms |
+| QualityMetricsExtractor | 200–400 ms |
+| ArtifactDetector | 300–600 ms |
+| _(no neural IQA, no FR comparator)_ | |
 
 ### 11.2 GPU Acceleration (RTX 3060)
 

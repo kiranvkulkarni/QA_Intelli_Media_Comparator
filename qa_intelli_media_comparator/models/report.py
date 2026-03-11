@@ -27,10 +27,21 @@ class ComparisonReport(BaseModel):
     crop_result: Optional[CropResult] = None
     crop_result_ref: Optional[CropResult] = None
 
-    # EXIF metadata + camera mode
+    # ── Analysis mode used ────────────────────────────────────────────────────
+    analysis_mode: str = "quality"  # "functional" | "quality"
+
+    # ── EXIF metadata + camera mode ────────────────────────────────────────────
     dut_metadata: Optional[MediaMetadata] = None       # EXIF from DUT
     ref_metadata: Optional[MediaMetadata] = None       # EXIF from reference (compare mode)
     metadata_comparison: Optional[MetadataComparison] = None  # side-by-side EXIF diff
+
+    # ── Functional validity (camera-is-working check) ──────────────────────────
+    # Separate from overall_grade (IQA quality): a Night photo can be
+    # QualityGrade.WARNING (noisy/soft) but FunctionalGrade.PASS (camera works).
+    # functional_grade == FAIL → camera hardware/software issue → escalate.
+    # functional_grade == WARNING → marginal; review recommended.
+    functional_grade: QualityGrade = QualityGrade.PASS
+    functional_reasons: list[str] = Field(default_factory=list)
 
     # Quality scores
     quality_metrics: QualityMetrics = Field(default_factory=QualityMetrics)

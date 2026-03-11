@@ -649,6 +649,13 @@ code { background: var(--bg); padding: 1px 5px; border-radius: 3px; font-size: 1
     <div class="card">
       <div class="card-title">⚙ Options</div>
       <div style="display:flex;flex-direction:column;gap:8px;">
+        <div class="opt-row">
+          <label>Analysis mode:</label>
+          <select class="opt-select" id="analysisMode">
+            <option value="quality">Quality (full pipeline)</option>
+            <option value="functional">Functional (fast, classical only)</option>
+          </select>
+        </div>
         <label class="opt-row">
           <input type="checkbox" id="cropPreview" checked>
           Auto-crop camera UI chrome (preview recordings)
@@ -1061,6 +1068,7 @@ async function runAnalysis() {
     fd.append('media', S.dutFile, S.dutFile.name);
   }
   fd.append('crop_preview', document.getElementById('cropPreview').checked);
+  fd.append('analysis_mode', document.getElementById('analysisMode').value);
 
   const endpoint = isCompare ? '/compare' : '/analyze';
   buildCurl(apiBase(), endpoint, isCompare);
@@ -1520,9 +1528,10 @@ function switchMTab(tab, btn) {
 // ─── cURL builder ────────────────────────────────────────────────────────────
 function buildCurl(base, endpoint, isCompare) {
   const crop = document.getElementById('cropPreview').checked ? 'true' : 'false';
+  const mode = document.getElementById('analysisMode').value;
   const cmd = isCompare
-    ? `curl -X POST "${base}${endpoint}" \\\n  -F "dut=@YOUR_DUT_FILE.jpg" \\\n  -F "reference=@YOUR_REF_FILE.jpg" \\\n  -F "crop_preview=${crop}" \\\n  -F "sync_mode=auto"`
-    : `curl -X POST "${base}${endpoint}" \\\n  -F "media=@YOUR_FILE.jpg" \\\n  -F "crop_preview=${crop}"`;
+    ? `curl -X POST "${base}${endpoint}" \\\n  -F "dut=@YOUR_DUT_FILE.jpg" \\\n  -F "reference=@YOUR_REF_FILE.jpg" \\\n  -F "crop_preview=${crop}" \\\n  -F "sync_mode=auto" \\\n  -F "analysis_mode=${mode}"`
+    : `curl -X POST "${base}${endpoint}" \\\n  -F "media=@YOUR_FILE.jpg" \\\n  -F "crop_preview=${crop}" \\\n  -F "analysis_mode=${mode}"`;
   document.getElementById('curlPanel').textContent = cmd;
 }
 function copyText(elId) {

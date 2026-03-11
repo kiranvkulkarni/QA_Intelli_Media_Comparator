@@ -28,6 +28,7 @@ from ..models.video import VideoTemporalMetrics, VideoAnalysisResult
 from ..config import get_settings
 from .quality_metrics import QualityMetricsExtractor
 from .artifact_detector import ArtifactDetector
+from .functionality_checker import FunctionalityChecker
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +44,7 @@ class VideoAnalyzer:
         self._settings = get_settings()
         self._qm_extractor = QualityMetricsExtractor()
         self._artifact_detector = ArtifactDetector()
+        self._func_checker = FunctionalityChecker()
 
     def analyze(
         self,
@@ -78,6 +80,11 @@ class VideoAnalyzer:
         artifact_report = ArtifactReport()
         if worst_idx < len(dut_frames):
             artifact_report = self._artifact_detector.detect(dut_frames[worst_idx])
+
+        # Functional checks — black/frozen frame detection
+        black_count, frozen_count = self._func_checker.check_video_sequence(dut_frames)
+        temporal.black_frame_count = black_count
+        temporal.frozen_frame_count = frozen_count
 
         # Cap FPS info
         cap = cv2.VideoCapture(str(dut_path))

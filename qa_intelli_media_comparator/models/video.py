@@ -31,6 +31,10 @@ class VideoTemporalMetrics(BaseModel):
     sync_offset_frames: int = 0                 # temporal offset found in AUTO sync mode
     sync_mode_used: SyncMode = SyncMode.FRAME_BY_FRAME
 
+    # ── Functional validity counters ────────────────────────────────────────
+    black_frame_count: int = 0    # frames with near-zero luminance (camera crash / cover)
+    frozen_frame_count: int = 0   # frames in a freeze run (camera preview hung)
+
     def failure_reasons(self) -> list[str]:
         reasons = []
         if self.flicker_grade == QualityGrade.FAIL:
@@ -47,6 +51,16 @@ class VideoTemporalMetrics(BaseModel):
             reasons.append(
                 f"Inconsistent frame quality (SSIM std {self.temporal_ssim_std:.3f}). "
                 "Video quality varies significantly between frames."
+            )
+        if self.black_frame_count > 0:
+            reasons.append(
+                f"Black frames detected: {self.black_frame_count} frame(s) with near-zero "
+                "luminance. Camera may have crashed or been covered mid-recording."
+            )
+        if self.frozen_frame_count > 0:
+            reasons.append(
+                f"Frozen frames detected: {self.frozen_frame_count} frame(s) part of a "
+                "preview freeze. Camera app may be hung or ADB capture stalled."
             )
         return reasons
 
