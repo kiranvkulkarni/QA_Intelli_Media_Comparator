@@ -1251,231 +1251,143 @@ QA_Intelli_Media_Comparator/
 ```
 
 
+I carefully read both images you shared. Your manager’s goals and peer goals have very specific expectations like:
 
-Below is a structured SMART MBO framework aligned with your team direction: “AI TRANSFORMATION” and your team structure.
-I designed it so it works for performance evaluation systems used in most tech companies (Meets / Exceeds criteria clearly measurable).
+VOC detection
 
-I separated it into:
+Camera benchmarking
 
-1️⃣ Your Goals (Team Lead / SDET Manager)
-2️⃣ Goals Template for Engineers (can be reused for each role)
-3️⃣ Role-specific metric tweaks for each subgroup
-
-
----
-
-1. Your MBO Goals (Team Lead – AI Transformation Driver)
-
-Sl. No.	Goal Title	Goal Description	Goal Details + Target Metrics (Meets Level)	Goal Details + Target Metrics (Exceeds Some/All Level)	Target Date
-
-1	AI-Driven Test Automation for UI Requirements	Develop and deploy an AI-based UI verification automation system that converts FIGMA designs and requirements into automated UI validation tests to improve verification efficiency and reduce manual effort.	• Deliver FIGMA → UI verification automation pipeline<br>• Achieve ≥70% UI requirement coverage through automation<br>• Reduce manual UI verification effort by ≥30%<br>• Deploy solution to ≥1 active project	• Achieve ≥85% UI verification coverage<br>• Reduce manual effort ≥50%<br>• Deploy tool across ≥2 projects or teams<br>• Publish internal documentation / demo adoption session	Dec 2026
-2	AI-Driven Quality Engineering Efficiency	Introduce AI-based tools (defect prediction, test optimization, requirement analysis, automation generation) to improve test efficiency and product quality across smartphone and XR verification teams.	• Deploy ≥2 AI tools used by the team (e.g., defect prediction, test suite optimization)<br>• Reduce test execution time ≥20% through optimization<br>• Improve defect detection rate before release ≥10%	• Deploy ≥3–4 AI tools supporting verification lifecycle<br>• Reduce test execution time ≥35%<br>• Improve defect detection rate ≥20%	Dec 2026
-3	Technical Leadership & AI Capability Building	Build strong AI/automation capabilities within the team through mentoring, architecture design guidance, and structured learning initiatives aligned with the AI transformation vision.	• Conduct ≥4 internal technical sessions on AI/automation<br>• Mentor engineers to deliver ≥2 AI automation projects<br>• Publish internal technical architecture documentation	• Conduct ≥6 knowledge sessions / workshops<br>• Enable ≥4 engineers to independently lead AI initiatives<br>• Create reusable AI frameworks adopted across projects	Dec 2026
-4	High-Performance Team Culture & Collaboration	Foster a culture of collaboration, innovation, and continuous improvement that enhances team productivity, ownership, and knowledge sharing.	• Conduct monthly knowledge sharing sessions<br>• Drive ≥2 cross-team collaboration initiatives<br>• Maintain ≥90% milestone delivery adherence	• Drive ≥3–4 cross-team initiatives<br>• Introduce innovation challenge / hackathon for AI ideas<br>• Achieve ≥95% milestone adherence	Dec 2026
-
-
-
----
-
-2. Standard MBO Template for Team Members
-
-You can reuse this template for all engineers, adjusting the metrics depending on their role.
-
-Sl. No.	Goal Title	Goal Description	Goal Details + Target Metrics (Meets Level)	Goal Details + Target Metrics (Exceeds Some/All Level)	Target Date
-
-1	Project Deliverables & Quality	Deliver project milestones with high quality, reliability, and automation coverage.	Deliver assigned verification scope with ≥95% milestone adherence and maintain test automation reliability ≥90%.	Deliver milestones ahead of schedule and improve automation reliability ≥95%.	Dec 2026
-2	AI-Driven Innovation & Efficiency	Apply AI technologies to improve testing productivity, automation coverage, and defect detection.	Implement ≥1 AI-driven improvement in testing workflow improving efficiency ≥15%.	Implement ≥2 innovations improving efficiency ≥30%.	Dec 2026
-3	Technical Expertise & Learning	Strengthen domain expertise in testing frameworks, AI tools, and system verification technologies.	Complete ≥2 technical trainings/certifications and apply learning in project deliverables.	Complete ≥3 trainings, develop reusable technical modules, and mentor peers.	Dec 2026
-4	Collaboration & Knowledge Sharing	Contribute to team growth through collaboration, mentoring, and knowledge sharing.	Conduct ≥1 knowledge sharing session and support team initiatives.	Conduct ≥2 sessions, mentor junior engineers, and contribute to cross-team initiatives.	Dec 2026
-
-
-
----
-
-3. Role-Specific Goal Focus
-
-Below are target metric adjustments for each team subgroup.
-
-
----
-
-A. Smartphone Camera Verification Team (4 Engineers + Lead)
-
-Focus: Automation robustness + performance testing
-
-Additional measurable metrics
-
-Increase automation coverage ≥85%
-
-Reduce test execution time ≥20%
-
-Improve test stability ≥95%
-
-Identify ≥5 performance issues before release
-
-
-Exceeds
-
-Automation coverage ≥90%
-
-Execution time reduction ≥35%
-
-Identify ≥8 issues pre-release
-
-
-
----
-
-B. AI GUI Verification Engineer (FIGMA)
-
-Focus: AI-driven UI validation
-
-Metrics:
-
-Meets
-
-Deliver FIGMA → UI automation pipeline
-
-Achieve ≥70% UI component validation coverage
-
-
-Exceeds
-
-Achieve ≥85% UI validation coverage
-
-Add auto-test generation capability
-
-
-
----
-
-C. AI Defect Prediction / Test Optimization Engineer
-
-Focus: Data-driven testing
-
-Metrics:
-
-Meets
-
-Implement ML model for defect prediction
-
-Improve test prioritization efficiency ≥20%
-
-
-Exceeds
-
-Predict ≥30% of high-severity defects early
-
-Reduce regression test time ≥35%
-
-
-
----
-
-D. XR/MR/AR/VR Automation Tool Engineers
-
-Focus: Automation infrastructure
-
-Metrics:
-
-Meets
-
-Deliver automation framework for XR device validation
-
-Automate ≥50% regression tests
-
-
-Exceeds
-
-Automate ≥70% regression tests
-
-Reduce manual testing effort ≥40%
-
-
-
----
-
-E. XR/MR/AR/VR Verification Engineers
-
-Focus: Functional & performance validation
-
-Metrics:
-
-Meets
-
-Deliver verification coverage ≥95% requirement coverage
-
-Identify ≥5 critical issues before release
-
-
-Exceeds
-
-Identify ≥8+ critical issues
-
-Improve automation coverage ≥20%
-
-
-
----
-
-4. Extra Goal (Optional but Very Powerful for AI Transformation)
-
-You may want to add this optional innovation goal.
-
-“AI Productivity Multiplier”
-
-Goal:
-Build AI tools that reduce verification cycle time across the organization.
-
-Example targets:
-
-Meets
-
-Deliver 1 reusable AI tool
-
-Reduce team effort ≥15%
-
-
-Exceeds
-
-Deliver 2+ reusable tools
-
-Reduce team effort ≥30%
-
-
-
----
-
-5. Why This Structure Works (Important for Management Reviews)
-
-These goals:
-
-✔ Align with AI Transformation strategy
-✔ Are SMART (Specific, Measurable, Achievable, Relevant, Time-bound)
-✔ Show innovation + delivery balance
-✔ Demonstrate leadership impact
-✔ Highlight productivity improvement
-
-Managers typically love goals showing:
-
-Efficiency improvement
+Automation coverage %
 
 AI adoption
 
-Cross-team impact
+Predictive insights
 
-Automation coverage
+GUI verification
 
-Defect detection improvement
+Postmortem quality reports
+
+Tech sensing & best practices
+
+Team upskilling & SCI culture
+
+PRISM / impact presentations
 
 
-Your goals already demonstrate all five.
+Your first Excel I generated earlier was too generic, so below is a much deeper SMART goal structure that:
+
+✔ Includes most elements from your manager + peer goals
+✔ Aligns with AI Transformation direction
+✔ Aligns with your team structure
+✔ Is copy-paste friendly for Excel
+
+Columns match your sheet.
 
 
 ---
 
-✅ If you want, I can also help you create a VERY IMPRESSIVE MBO VERSION (Director/VP level) that makes your role look like:
+YOUR GOALS (TEAM LEAD – AI TRANSFORMATION DRIVER)
 
-“AI Transformation Leader for Quality Engineering”
+Sl. No	Goal Title	Goal Description	Meets Level	Exceeds Level	Target Date
 
-This version often increases promotion probability significantly.
+1	AI Transformation & Intelligent Testing	Drive adoption of AI powered verification techniques across camera and XR verification workflows to improve quality, reduce testing effort and enable predictive quality insights.	• Implement 2 AI solutions supporting verification lifecycle (e.g., AI GUI verification from FIGMA, defect prediction, test optimization).<br>• Achieve ≥20% reduction in manual testing effort in at least one project.<br>• Generate AI based insights for defect prediction or test prioritization used by team.<br>• Conduct AI literacy / enablement training for team (≥3 sessions).<br>• Deliver AI adoption report with measurable impact.	• Deploy 3–4 AI solutions used across multiple projects.<br>• Achieve ≥35–40% reduction in manual testing effort.<br>• AI generated test cases contribute ≥25% of new test coverage.<br>• Implement predictive defect analytics improving early defect detection ≥20%.<br>• Establish reusable AI Testing Framework for organization.	Dec 2026
+2	Automation Effectiveness & Test Efficiency Optimization	Strengthen automation frameworks for smartphone camera and XR device verification to improve coverage, reduce manual verification and accelerate release cycles.	• Increase automation coverage ≥70% for regression scenarios.<br>• Reduce test execution cycle time ≥20%.<br>• Ensure ≥20% defects identified through automation pipelines.<br>• Improve stability of automated tests to ≥95% reliability.<br>• Introduce data driven test execution dashboards for automation insights.	• Automation coverage ≥85%.<br>• Test execution time reduced ≥35–40%.<br>• ≥30% defects detected via automation.<br>• Implement self-healing / AI assisted automation capabilities.<br>• Automation framework adopted by multiple product teams.	Dec 2026
+3	Camera Quality Excellence & Market VOC Prevention	Ensure camera feature quality through structured verification, benchmarking, VOC analysis and early detection of potential market issues across flagship camera features.	• Perform feature benchmarking and stability validation for Top 5 camera features.<br>• Identify ≥50% potential VOC issues during testing phase.<br>• Deliver quality reports covering customer expectation, usability and performance metrics.<br>• Drive ≥2 camera improvement initiatives based on testing insights.<br>• Perform cross-device benchmarking vs competitor devices.	• Identify ≥70% potential VOC issues before release.<br>• Deliver comprehensive quality analytics dashboards.<br>• Drive ≥3 camera innovation improvement initiatives.<br>• Introduce AI assisted image quality analysis pipelines.<br>• Benchmark against top industry devices and publish insights.	Dec 2026
+4	Team Capability Development & Technical Culture	Build a high performing team culture through mentoring, knowledge sharing, innovation initiatives and continuous learning aligned with AI transformation strategy.	• Conduct ≥4 internal technical sessions on AI/automation/testing.<br>• Enable ≥3 engineers to deliver innovation contributions.<br>• Maintain ≥90% milestone adherence for project deliverables.<br>• Encourage team participation in AI learning & certification programs.<br>• Maintain strong collaboration with development teams and stakeholders.	• Conduct ≥6+ technical sessions / innovation workshops.<br>• Enable ≥5 engineers to lead technical initiatives.<br>• Maintain ≥95% milestone adherence.<br>• Introduce innovation challenges / AI hackathons.<br>• Deliver organization level knowledge sharing contributions.	Dec 2026
+
+
+
+---
+
+TEAM GOALS (ENGINEERS)
+
+These goals combine your peer goals + your team structure.
+
+
+---
+
+1. Smartphone Camera Verification Engineers (4 + Lead)
+
+Sl.No	Goal Title	Goal Description	Meets	Exceeds	Target
+
+1	Camera Feature Quality & Stability	Ensure stability and functional correctness of camera features through structured verification and benchmarking.	Validate Top 5 camera features across scenarios and device configurations.<br>Detect ≥50% potential VOC issues during testing phase.<br>Deliver detailed test reports including performance, usability and defect classification.<br>Identify ≥2 improvement opportunities for camera algorithms or feature performance.	Detect ≥70% potential VOC issues before release.<br>Deliver comprehensive quality reports including benchmarking vs competitor devices.<br>Drive ≥3 improvement initiatives for camera features.	Dec 2026
+2	Automation Coverage Expansion	Improve automation coverage across camera verification including functional, memory profiling and FPS performance tests.	Increase automation coverage ≥70% of regression suite.<br>Reduce manual testing effort ≥25%.<br>Maintain automation stability ≥95%.	Automation coverage ≥85%.<br>Manual effort reduction ≥40%.<br>Introduce AI assisted automation improvements.	Dec 2026
+3	Performance & Resource Optimization	Validate camera performance metrics including memory, FPS, launch time and system stability.	Identify ≥5 performance bottlenecks or memory issues.<br>Provide actionable insights to development team.<br>Benchmark performance against previous device generations.	Identify ≥8 performance improvements.<br>Implement automated performance monitoring dashboards.	Dec 2026
+4	Innovation & Technical Contributions	Contribute innovative ideas for improving camera verification efficiency and product quality.	Deliver ≥1 innovation contribution such as tool improvement or automation enhancement.<br>Present findings in internal technical sessions.	Deliver ≥2 innovation contributions adopted by team or project.	Dec 2026
+
+
+
+---
+
+2. AI GUI Verification Engineer (FIGMA Automation)
+
+Sl.No	Goal Title	Goal Description	Meets	Exceeds	Target
+
+1	AI Based GUI Verification Automation	Develop AI system that converts FIGMA UI designs and requirements into automated UI verification tests.	Implement FIGMA design parser + test generation pipeline.<br>Automate ≥60% UI verification scenarios.<br>Reduce manual UI validation effort ≥30%.	Automate ≥80% UI verification scenarios.<br>Reduce manual effort ≥50%.<br>Framework adopted across multiple projects.	Dec 2026
+2	AI Generated Test Case Creation	Use AI models to generate test cases from FIGMA requirements and annotations.	Generate ≥30% of new UI test cases using AI.<br>Validate generated tests through automated pipelines.	Generate ≥50% UI test cases using AI.<br>Implement self-learning improvement loops.	Dec 2026
+3	GUI Verification Framework	Develop scalable framework supporting multiple products and UI variations.	Deliver reusable framework for UI verification supporting multiple apps.<br>Improve GUI test execution efficiency ≥25%.	Framework adopted across multiple product teams.<br>Execution efficiency improvement ≥40%.	Dec 2026
+4	Knowledge Sharing & Innovation	Contribute to team knowledge sharing and AI innovation initiatives.	Deliver ≥1 internal technical presentation on AI UI automation.	Deliver ≥2 innovation contributions used by team.	Dec 2026
+
+
+
+---
+
+3. AI Defect Prediction & Test Optimization Engineer
+
+Sl.No	Goal Title	Goal Description	Meets	Exceeds	Target
+
+1	AI Based Defect Prediction	Develop ML models to predict high risk components and potential defects before testing cycles.	Build predictive model identifying ≥20% high risk defects early.<br>Integrate insights into test planning.	Predict ≥35% high risk defects early.<br>Model used across multiple projects.	Dec 2026
+2	Test Suite Optimization	Use AI to prioritize regression tests and reduce execution time.	Reduce regression test execution time ≥25%.<br>Improve defect detection efficiency.	Reduce execution time ≥40%.	Dec 2026
+3	Data Driven Quality Analytics	Build analytics dashboards using testing and defect datasets.	Deliver dashboards showing defect trends, test effectiveness and risk areas.	Predictive dashboards used by leadership for quality decisions.	Dec 2026
+4	Innovation Contributions	Contribute new AI techniques for improving testing workflows.	Deliver ≥1 AI tool or workflow improvement.	Deliver ≥2 innovations adopted by projects.	Dec 2026
+
+
+
+---
+
+4. XR/MR/AR/VR Automation Engineers
+
+Sl.No	Goal Title	Goal Description	Meets	Exceeds	Target
+
+1	XR Automation Framework Development	Build scalable automation framework for XR device testing.	Deliver framework supporting core device workflows.<br>Automate ≥50% regression tests.	Automate ≥70% regression tests.	Dec 2026
+2	Automation Efficiency Improvement	Improve automation reliability and execution efficiency.	Reduce execution time ≥20%.<br>Maintain stability ≥95%.	Reduce execution time ≥35%.	Dec 2026
+3	Cross Device Validation	Ensure framework supports multiple XR devices.	Validate framework across multiple device models.	Framework adopted by multiple product teams.	Dec 2026
+4	Innovation & Tooling	Introduce tools improving XR verification efficiency.	Deliver ≥1 automation tool improvement.	Deliver ≥2 improvements adopted by team.	Dec 2026
+
+
+
+---
+
+5. XR Functional Test Engineers
+
+Sl.No	Goal Title	Goal Description	Meets	Exceeds	Target
+
+1	XR Feature Verification	Validate functional correctness and stability of XR device features.	Achieve ≥95% requirement coverage.<br>Identify ≥5 major issues before release.	Identify ≥8 major issues before release.	Dec 2026
+2	Non Functional Validation	Validate performance, thermal, stability and resource usage metrics.	Identify ≥4 performance issues impacting user experience.	Deliver comprehensive performance benchmarking reports.	Dec 2026
+3	Test Efficiency Improvements	Improve testing efficiency using automation or process improvements.	Reduce manual testing effort ≥20%.	Reduce manual effort ≥35%.	Dec 2026
+4	Technical Learning & Knowledge Sharing	Contribute to team learning culture and technical excellence.	Deliver ≥1 technical knowledge sharing session.	Deliver ≥2 sessions and mentor junior engineers.	Dec 2026
+
+
+
+---
+
+💡 Important:
+These goals now clearly reflect what leadership likes to see:
+
+AI Transformation
+
+Automation efficiency
+
+VOC prevention
+
+Predictive testing
+
+Customer quality
+
+Innovation contributions
+
+Team culture
+
+
+
+---
